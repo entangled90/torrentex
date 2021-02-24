@@ -1,33 +1,58 @@
 defmodule Torrentex.Torrent.Worker do
+  @moduledoc """
+  Start downloading a torrent given a path to a torrent file or a magnet link
+
+  {:ok, pid} = Torrentex.Torrent.Worker.start_link("data/ubuntu-20.04.2.0-desktop-amd64.iso.torrent")
+
+  """
+  alias Torrentex.Torrent.Parser
+  alias Torrentex.Torrent.Tracker
+  alias Torrentex.Torrent.PeerConnection
+
   use GenServer
   require Logger
 
-  defmodule DownloadStatus do
-    defstruct downloaded: 0, uploaded: 0, left: 0
+  defmodule State do
+    defmodule DownloadStatus do
+      defstruct downloaded: 0, uploaded: 0, left: 0
 
-    def for_torrent(info) do
-      case info do
-        %Bento.Metainfo.SingleFile{length: length} -> %__MODULE__{left: length}
+      def for_torrent(info) do
+        case info do
+          %Bento.Metainfo.SingleFile{length: length} -> %__MODULE__{left: length}
+        end
       end
     end
+
+    defstruct [:source, :torrent, :info_hash, :peer_id, :tracker_response, :download_status]
+
+    def init(source, torrent, hash, peer_id) do
+      status = DownloadStatus.for_torrent(torrent.info)
+
+      %__MODULE__{
+        source: source,
+        torrent: torrent,
+        info_hash: hash,
+        peer_id: peer_id,
+        tracker_response: nil,
+        download_status: status
+      }
+    end
+  end
+
+  def start_link(source) do
+    GenServer.start_link(__MODULE__, source)
   end
 
   @impl true
   def init(source) when is_binary(source) do
-    {torrent, info_hash} = decode_torrent(source)
-    peer_id = :crypto.hash(:sha, "#{inspect(node())}-#{:os.system_time(:millisecond)}}")
+    {torrent, info_hash} = Parser.decode_torrent(source)
+    peer_id = Tracker.generate_peer_id()
 
-    state = %{
-      source: source,
-      torrent: torrent,
-      info_hash: info_hash,
-      peer_id: peer_id,
-      tracker_response: nil,
-      download_status: DownloadStatus.for_torrent(torrent.info)
-    }
+    state = State.init(source, torrent, info_hash, peer_id)
 
-    Logger.info("Starting torrent for state #{inspect(state[:torrent])}")
-    send(self(), {:call_tracker, "started"})
+    Logger.info("Starting torrent for state #{inspect(state.torrent)}")
+    send self(), {:call_tracker, "started"}
+    Process.flag(:trap_exit, true)
     {:ok, state}
   end
 
@@ -41,13 +66,27 @@ defmodule Torrentex.Torrent.Worker do
     {:reply, state[:torrent], state}
   end
 
+  #workers in case they die.
   @impl true
-  def handle_info({:call_tracker, event} = evt, state) do
-    state =
-      case call_tracker(state, event) do
+  def handle_info({:EXIT, from, reason}, state) do
+    Logger.info("Process #{inspect from} exited with reason #{inspect reason}")
+    {:noreply, state}
+  end
+
+
+  @impl true
+  def handle_info({:call_tracker, event} = evt, %State{} = state) do
+    updated_state =
+      case Tracker.call_tracker(
+             state.torrent.announce,
+             state.info_hash,
+             state.peer_id,
+             state.download_status,
+             event
+           ) do
         {:ok, resp} ->
           Logger.debug("Response from tracker #{inspect(resp)}")
-          Map.put(state, :tracker_response, resp)
+          %{state | tracker_response: resp}
 
         {:error, reason} ->
           Logger.warn("Received failure from tracker: #{inspect(reason)}")
@@ -55,58 +94,32 @@ defmodule Torrentex.Torrent.Worker do
           state
       end
 
-    {:noreply, state}
+    response = updated_state.tracker_response
+
+    new_peers =
+      if state.tracker_response == nil do
+        response["peers"]
+      else
+        MapSet.new(response["peers"])
+        |> MapSet.difference(MapSet.new(state.tracker_response["peers"]))
+      end
+
+    Logger.debug("New peers are #{inspect(new_peers)}")
+
+    new_peers
+    |> Enum.map(fn peer ->
+      PeerConnection.start_link(peer, state.peer_id, state.info_hash, state.torrent)
+    end)
+
+    Logger.debug("Tracker retry after #{response["interval"]}")
+    Process.send_after(self(), {:call_tracker, nil}, response["interval"] * 1000)
+
+    {:noreply, updated_state}
   end
 
-  defp call_tracker(
-         %{
-           torrent: %Bento.Metainfo.Torrent{announce: announce},
-           info_hash: info_hash,
-           peer_id: peer_id,
-           download_status: download_status
-         },
-         event
-       ) do
-    Logger.info("Contacting tracker at #{announce}")
 
-    uri =
-      announce
-      |> URI.parse()
-      |> Map.put(
-        :query,
-        URI.encode_query(%{
-          "info_hash" => info_hash,
-          "peer_id" => peer_id,
-          "uploaded" => download_status.uploaded,
-          "downloaded" => download_status.downloaded,
-          "left" => download_status.left,
-          "compact" => 1,
-          "event" => event,
-          "port" => 6881
-        })
-      )
-      |> URI.to_string()
-
-    Logger.info("Tracker uri is #{uri}")
-
-    with {:ok, {{_, 200, _status_string}, _header, body}} <-
-           :httpc.request(:get, {uri, []}, [], []),
-         {:ok, decoded} <- Bento.decode(body) do
-      error = decoded["failure reason"]
-      if error != nil, do: {:error, error}, else: {:ok, decoded}
-    end
+  @impl true
+  def terminate(reason, state) do
+    Logger.info("Worker for torrent #{state.source} terminating with reason #{reason}")
   end
-
-  defp decode_torrent(source) do
-    if source |> String.ends_with?(".torrent") do
-      file_content = File.read!(source)
-      decoded = Bento.decode!(file_content)
-      hash = decoded["info"] |> Bento.encode!() |> sha1_sum()
-      {Bento.torrent!(file_content), hash}
-    else
-      raise "Only implemented for torrent files"
-    end
-  end
-
-  defp sha1_sum(binary), do: :crypto.hash(:sha, binary)
 end
