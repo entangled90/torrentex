@@ -3,7 +3,6 @@ defmodule Torrentex.Torrent.PeerConnection do
   use GenServer
   require Logger
 
-  @protocol "BitTorrent protocol"
   @keep_alive <<0::8>>
 
   defmodule State do
@@ -31,9 +30,15 @@ defmodule Torrentex.Torrent.PeerConnection do
   @impl true
   def init([peer, peer_id, info_hash, metainfo]) do
     Process.send_after(self(), :keep_alive, 30_000)
+
     {:ok,
-     %State{peer: peer, my_peer_id: peer_id, socket: nil, info_hash: info_hash, metainfo: metainfo},
-     {:continue, peer}}
+     %State{
+       peer: peer,
+       my_peer_id: peer_id,
+       socket: nil,
+       info_hash: info_hash,
+       metainfo: metainfo
+     }, {:continue, peer}}
   end
 
   @impl true
@@ -52,7 +57,7 @@ defmodule Torrentex.Torrent.PeerConnection do
   def handle_info({:tcp_closed, _pid}, %State{retries: retries} = state) do
     Logger.debug("Socket is closed. retrying after 30 seconds")
     Process.send_after(self(), :connect, 30_000)
-    {:noreply, %{state | retries: retries + 1 }}
+    {:noreply, %{state | retries: retries + 1}}
   end
 
   @impl true
@@ -61,12 +66,13 @@ defmodule Torrentex.Torrent.PeerConnection do
     if socket != state.socket do
       raise "Invalid socket sent the message!"
     end
+
     state =
       if state.handshake_done do
         raise "Not implemented yet!"
       else
         {rest, {^info_hash, id}} = WireProtocol.match_handshake(binary)
-        Logger.debug "Handshake completed with peer_id #{inspect id}"
+        Logger.debug("Handshake completed with peer_id #{inspect(id)}")
         %{state | other_peer_id: id}
       end
 
@@ -76,17 +82,15 @@ defmodule Torrentex.Torrent.PeerConnection do
   @impl true
   def handle_info(:keep_alive, state) do
     if state.socket do
-      Logger.debug "Sending keep alive"
+      Logger.debug("Sending keep alive")
       send_msg(state.socket, @keep_alive)
-      Process.send_after self(), :keep_alive, 30_000
+      Process.send_after(self(), :keep_alive, 30_000)
     end
   end
 
   defp connect(%{ip: ip, port: port}) do
     :gen_tcp.connect(ip, port, [:binary, {:active, true}], 30_000)
   end
-
-
 
   defp send_msg(socket, msg) do
     :gen_tcp.send(socket, msg)

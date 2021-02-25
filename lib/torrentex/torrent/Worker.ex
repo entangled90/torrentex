@@ -51,7 +51,7 @@ defmodule Torrentex.Torrent.Worker do
     state = State.init(source, torrent, info_hash, peer_id)
 
     Logger.info("Starting torrent for state #{inspect(state.torrent)}")
-    send self(), {:call_tracker, "started"}
+    send(self(), {:call_tracker, "started"})
     Process.flag(:trap_exit, true)
     {:ok, state}
   end
@@ -66,13 +66,12 @@ defmodule Torrentex.Torrent.Worker do
     {:reply, state[:torrent], state}
   end
 
-  #workers in case they die.
+  # workers in case they die.
   @impl true
   def handle_info({:EXIT, from, reason}, state) do
-    Logger.info("Process #{inspect from} exited with reason #{inspect reason}")
+    Logger.info("Process #{inspect(from)} exited with reason #{inspect(reason)}")
     {:noreply, state}
   end
-
 
   @impl true
   def handle_info({:call_tracker, event} = evt, %State{} = state) do
@@ -116,7 +115,6 @@ defmodule Torrentex.Torrent.Worker do
 
     {:noreply, updated_state}
   end
-
 
   @impl true
   def terminate(reason, state) do
