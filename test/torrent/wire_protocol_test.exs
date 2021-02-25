@@ -23,8 +23,9 @@ defmodule Torrentex.Torrent.WireProtocolTest do
     end
   end
 
+  def positive_generator, do: StreamData.integer(0..1024)
+
   def event_generator do
-    positive_generator = StreamData.integer(0..1024)
     tuple_three = StreamData.tuple({positive_generator, positive_generator, positive_generator})
 
     piece_generator =
@@ -35,12 +36,6 @@ defmodule Torrentex.Torrent.WireProtocolTest do
           WireProtocol.piece(idx, begin, bin)
         end)
       end)
-      |> StreamData.unshrinkable()
-
-    bitfield_generator =
-      StreamData.list_of(StreamData.integer(0..1024))
-      |> StreamData.map(&MapSet.new(&1))
-      |> StreamData.map(&WireProtocol.bitfield(&1))
 
     StreamData.one_of([
       StreamData.constant(WireProtocol.choke()),
@@ -51,7 +46,24 @@ defmodule Torrentex.Torrent.WireProtocolTest do
       tuple_three |> StreamData.map(&{:request, &1}),
       tuple_three |> StreamData.map(&{:cancel, &1}),
       StreamData.integer(0..65535) |> StreamData.map(&WireProtocol.port(&1)),
-      piece_generator
+      piece_generator,
+      bitfield_gen()
     ])
+  end
+
+  def bitfield_gen() do
+    StreamData.integer(1..16)
+    |> StreamData.bind(fn len ->
+      len = len * 8
+      set = MapSet.new()
+
+      StreamData.list_of(StreamData.integer(0..len - 1), min_length: len, max_length: len)
+      |> StreamData.map(fn l ->
+        set =
+          l
+          |> Enum.reduce(set, fn idx, set -> MapSet.put(set, idx) end)
+          |> WireProtocol.bitfield(length(l))
+      end)
+    end)
   end
 end

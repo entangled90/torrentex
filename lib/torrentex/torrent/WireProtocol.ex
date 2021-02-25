@@ -16,7 +16,11 @@ defmodule Torrentex.Torrent.WireProtocol do
            | :request
            | :unchoke
            | :choke,
-           nil | binary | integer | {integer, integer, binary | integer} | MapSet.t(integer())}
+           nil
+           | binary
+           | integer
+           | {integer, integer, binary | integer}
+           | {MapSet.t(integer()), integer()}}
 
   @spec choke :: message()
   def choke(), do: {:choke, nil}
@@ -40,8 +44,8 @@ defmodule Torrentex.Torrent.WireProtocol do
   def piece(index, begin, bin) when is_binary(bin) and is_integer(index) and is_integer(begin),
     do: {:piece, {index, begin, bin}}
 
-  @spec bitfield(binary) :: message()
-  def bitfield(bitfield) when is_binary(bitfield), do: {:bitfield, bitfield}
+  @spec bitfield(MapSet.t(integer()), integer()) :: message()
+  def bitfield(set, len), do: {:bitfield, {set, len}}
 
   @spec parseMulti(binary) :: [message()]
   def parseMulti(binary) do
@@ -107,8 +111,19 @@ defmodule Torrentex.Torrent.WireProtocol do
   def encode({:not_interested, nil}), do: <<1::32, 3::8>>
   def encode({:have, index}), do: <<5::32, 4::8, index::32>>
 
-  def encode({:bitfield, bitfield}),
-    do: <<1 + byte_size(bitfield)::32, 5::8, bitfield::binary>>
+  def encode({:bitfield, {set, len}}) do
+    bits =
+      0..(len - 1)
+      |> Enum.map(fn x -> if MapSet.member?(set, x), do: true, else: false end)
+      |> Enum.reduce(<<>>, fn present, acc ->
+        bit = if present, do: <<1::1>>, else: <<0::1>>
+        <<acc::bitstring, bit::bitstring>>
+      end)
+      |> pad_to_binary()
+
+
+    <<1 + byte_size(bits)::32, 5::8, bits::binary>>
+  end
 
   def encode({:request, {index, begin, length}}),
     do: <<13::32, 6::8, index::32, begin::32, length::32>>
@@ -121,19 +136,19 @@ defmodule Torrentex.Torrent.WireProtocol do
 
   def encode({:port, port}), do: <<3::32, 9::8, port::16>>
 
-  @spec bitfield_to_set(binary) :: MapSet.t(integer())
-  defp bitfield_to_set(bits) when is_binary(bits), do: bitfield_to_set(bits, 0, MapSet.new())
+  @spec bitfield_to_set(binary()) :: {MapSet.t(integer()), integer()}
+  defp bitfield_to_set(bits) when is_binary(bits), do: bitfield_to_set(bits, 0, MapSet.new(), 0)
 
-  defp bitfield_to_set(<<h::1, t::bitstring>> = bitstring, idx, previous)
+  defp bitfield_to_set(<<h::1, t::bitstring>> = bitstring, idx, previous, len)
        when is_bitstring(bitstring) do
     if h == 0 do
-      bitfield_to_set(t, idx + 1, previous)
+      bitfield_to_set(t, idx + 1, previous, len + 1)
     else
-      bitfield_to_set(t, idx + 1, previous |> MapSet.put(idx))
+      bitfield_to_set(t, idx + 1, previous |> MapSet.put(idx), len + 1)
     end
   end
 
-  defp bitfield_to_set(<<>>, _idx, previous), do: previous
+  defp bitfield_to_set(<<>>, _idx, previous, len), do: {previous, next_binary_size(len)}
 
   defguard is_20_bytes(binary) when is_binary(binary) and byte_size(binary) == 20
 
@@ -147,5 +162,23 @@ defmodule Torrentex.Torrent.WireProtocol do
       binary
 
     {rest, {hash, id}}
+  end
+
+  defp pad_to_binary(bitstring) do
+    size = bit_size(bitstring)
+    if rem(size, 8) == 0 do
+      bitstring
+    else
+      padding = next_binary_size(size) - size
+      <<bitstring::bitstring, 0::size(padding)>>
+    end
+  end
+
+  def next_binary_size(bit_size) do
+    if rem(bit_size, 8) == 0 do
+      bit_size
+    else
+      ( div(bit_size,8) + 1) * 8
+    end
   end
 end
