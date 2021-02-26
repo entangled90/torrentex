@@ -30,6 +30,7 @@ defmodule Torrentex.Torrent.PeerConnection do
   @impl true
   def init([peer, peer_id, info_hash, metainfo]) do
     Process.send_after(self(), :keep_alive, 30_000)
+    Logger.metadata(peer: peer)
 
     {:ok,
      %State{
@@ -45,7 +46,7 @@ defmodule Torrentex.Torrent.PeerConnection do
   def handle_continue(peer, %State{} = state) do
     case connect(peer) do
       {:ok, socket} ->
-        send_msg(socket, WireProtocol.handshake(state.info_hash, state.my_peer_id))
+        send_msg(socket, WireProtocol.handshake(state.info_hash, state.my_peer_id) |> WireProtocol.encode)
         {:noreply, %{state | socket: socket}}
 
       {:error, :econnrefused} ->
@@ -61,20 +62,15 @@ defmodule Torrentex.Torrent.PeerConnection do
   end
 
   @impl true
-  def handle_info({:tcp, socket, binary}, %State{info_hash: info_hash} = state)
+  def handle_info({:tcp, socket, binary}, state)
       when is_binary(binary) do
     if socket != state.socket do
       raise "Invalid socket sent the message!"
     end
 
     state =
-      if state.handshake_done do
-        raise "Not implemented yet!"
-      else
-        {rest, {^info_hash, id}} = WireProtocol.match_handshake(binary)
-        Logger.debug("Handshake completed with peer_id #{inspect(id)}")
-        %{state | other_peer_id: id}
-      end
+      WireProtocol.parseMulti(binary)
+      |> Enum.reduce(state, &handle_msg(&1, &2))
 
     {:noreply, state}
   end
@@ -94,5 +90,15 @@ defmodule Torrentex.Torrent.PeerConnection do
 
   defp send_msg(socket, msg) do
     :gen_tcp.send(socket, msg)
+  end
+
+  defp handle_msg({:handshake, {peer, handshake_hash}}, %State{info_hash: info_hash} = state)
+       when info_hash == handshake_hash do
+    %{state | handshake_done: true, other_peer_id: peer}
+  end
+
+  defp handle_msg({:hanshake, _}, _) do
+    Logger.info("Invalid info hash received, stopping")
+    Process.exit(self(), :exit)
   end
 end

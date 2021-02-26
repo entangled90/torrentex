@@ -23,6 +23,17 @@ defmodule Torrentex.Torrent.WireProtocolTest do
     end
   end
 
+  property "wire protocol encode/decode roundtrip with remaining bytes" do
+    check all(event <- event_generator(), remaining_bytes <- StreamData.binary(max_length: 128)) do
+      {remaining_bytes, decoded} =
+        event |> WireProtocol.encode() |> append_bits(remaining_bytes) |> WireProtocol.parse()
+
+      assert decoded == event
+    end
+  end
+
+  def append_bits(bits, binary), do: <<bits::binary, binary::binary>>
+
   def positive_generator, do: StreamData.integer(0..1024)
 
   def event_generator do
@@ -57,7 +68,7 @@ defmodule Torrentex.Torrent.WireProtocolTest do
       len = len * 8
       set = MapSet.new()
 
-      StreamData.list_of(StreamData.integer(0..len - 1), min_length: len, max_length: len)
+      StreamData.list_of(StreamData.integer(0..(len - 1)), min_length: len, max_length: len)
       |> StreamData.map(fn l ->
         set =
           l

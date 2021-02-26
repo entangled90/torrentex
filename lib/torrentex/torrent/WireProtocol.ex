@@ -1,6 +1,5 @@
 defmodule Torrentex.Torrent.WireProtocol do
   @protocol "BitTorrent protocol"
-  @keep_alive <<0::8>>
 
   @typedoc """
     Messages sent to other peers.
@@ -15,12 +14,16 @@ defmodule Torrentex.Torrent.WireProtocol do
            | :port
            | :request
            | :unchoke
-           | :choke,
+           | :choke
+           | :handshake,
            nil
            | binary
            | integer
            | {integer, integer, binary | integer}
+           | {binary, binary}
            | {MapSet.t(integer()), integer()}}
+
+  defguard is_20_bytes(binary) when is_binary(binary) and byte_size(binary) == 20
 
   @spec choke :: message()
   def choke(), do: {:choke, nil}
@@ -47,6 +50,8 @@ defmodule Torrentex.Torrent.WireProtocol do
   @spec bitfield(MapSet.t(integer()), integer()) :: message()
   def bitfield(set, len), do: {:bitfield, {set, len}}
 
+  def handshake(peer_id, info_hash) when is_20_bytes(info_hash) and is_20_bytes(peer_id), do: {:handshake, {peer_id, info_hash}}
+
   @spec parseMulti(binary) :: [message()]
   def parseMulti(binary) do
     parseMulti(binary, [])
@@ -58,9 +63,14 @@ defmodule Torrentex.Torrent.WireProtocol do
     if byte_size(rest) > 0, do: parseMulti(rest, acc), else: acc
   end
 
-  @spec parse(<<_::32, _::_*8>>) :: {binary, message()}
-  def parse(binary) when is_binary(binary) do
-    <<len::32, msg::binary-size(len), rest::binary>> = binary
+  @spec parse(<<_::32, _::_*8>>) :: {binary, message() | nil}
+  def parse(
+        <<19, @protocol, _::binary-size(8), hash::binary-size(20), id::binary-size(20),
+          rest::binary>>
+      ),
+      do: {rest, {hash, id}}
+
+  def parse(<<len::32, msg::binary-size(len), rest::binary>> = binary) when is_binary(binary) do
     <<id::8, payload::binary>> = msg
 
     event =
@@ -104,12 +114,21 @@ defmodule Torrentex.Torrent.WireProtocol do
     {rest, event}
   end
 
+  def parse(bin) when is_binary(bin), do: {bin, nil}
+
+
   @spec encode(message()) :: <<_::40, _::_*8>>
   def encode({:choke, nil}), do: <<1::32, 0::8>>
   def encode({:unchoke, nil}), do: <<1::32, 1::8>>
   def encode({:interested, nil}), do: <<1::32, 2::8>>
   def encode({:not_interested, nil}), do: <<1::32, 3::8>>
   def encode({:have, index}), do: <<5::32, 4::8, index::32>>
+
+  def encode({:handshake, {peer_id, info_hash}})
+      when is_20_bytes(info_hash) and is_20_bytes(peer_id) do
+    zero_bytes = <<0::size(64)>>
+    <<19::8, @protocol, zero_bytes::binary, info_hash::binary, peer_id::binary>>
+  end
 
   def encode({:bitfield, {set, len}}) do
     bits =
@@ -120,7 +139,6 @@ defmodule Torrentex.Torrent.WireProtocol do
         <<acc::bitstring, bit::bitstring>>
       end)
       |> pad_to_binary()
-
 
     <<1 + byte_size(bits)::32, 5::8, bits::binary>>
   end
@@ -150,22 +168,9 @@ defmodule Torrentex.Torrent.WireProtocol do
 
   defp bitfield_to_set(<<>>, _idx, previous, len), do: {previous, next_binary_size(len)}
 
-  defguard is_20_bytes(binary) when is_binary(binary) and byte_size(binary) == 20
-
-  def handshake(info_hash, peer_id) when is_20_bytes(info_hash) and is_20_bytes(peer_id) do
-    zero_bytes = <<0::size(64)>>
-    <<19::8, @protocol, zero_bytes::binary, info_hash::binary, peer_id::binary>>
-  end
-
-  def match_handshake(binary) when is_binary(binary) do
-    <<19, @protocol, _::binary-size(8), hash::binary-size(20), id::binary-size(20), rest::binary>> =
-      binary
-
-    {rest, {hash, id}}
-  end
-
   defp pad_to_binary(bitstring) do
     size = bit_size(bitstring)
+
     if rem(size, 8) == 0 do
       bitstring
     else
@@ -178,7 +183,7 @@ defmodule Torrentex.Torrent.WireProtocol do
     if rem(bit_size, 8) == 0 do
       bit_size
     else
-      ( div(bit_size,8) + 1) * 8
+      (div(bit_size, 8) + 1) * 8
     end
   end
 end
