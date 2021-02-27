@@ -17,6 +17,7 @@ defmodule Torrentex.Torrent.PeerConnection do
       other_peer_id: nil,
       retries: 0,
       handshake_done: false,
+      have: MapSet.new(),
       choked: false,
       interested: false,
       am_choking: false,
@@ -71,7 +72,7 @@ defmodule Torrentex.Torrent.PeerConnection do
     state =
       WireProtocol.parseMulti(binary)
       |> Enum.reduce(state, &handle_msg(&1, &2))
-
+    Logger.debug "State after messages: #{inspect state}"
     {:noreply, state}
   end
 
@@ -120,8 +121,11 @@ defmodule Torrentex.Torrent.PeerConnection do
     %{state| choked: true}
   end
 
-  defp handle_msg({:bitfield, bit}, state) do
-    Logger.debug("Received bitfield #{inspect bit}")
-    state
+  defp handle_msg({:bitfield, {bit, _len}}, state) do
+    %{state | have: MapSet.union(state.have, bit)}
+  end
+
+  defp handle_msg({:have, idx}, state) do
+    %{ state | have: MapSet.put(state.have, idx)}
   end
 end
