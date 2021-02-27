@@ -8,6 +8,7 @@ defmodule Torrentex.Torrent.Torrent do
   alias Torrentex.Torrent.Parser
   alias Torrentex.Torrent.Tracker
   alias Torrentex.Torrent.PeerConnection
+  alias Torrentex.Torrent.Peer
 
   use GenServer
   require Logger
@@ -23,9 +24,17 @@ defmodule Torrentex.Torrent.Torrent do
       end
     end
 
-    defstruct [:source, :torrent, :info_hash, :peer_id, :tracker_response, :download_status]
+    defstruct [
+      :source,
+      :torrent,
+      :info_hash,
+      :peer_id,
+      :tracker_response,
+      :download_status,
+      :peer_supervisor
+    ]
 
-    def init(source, torrent, hash, peer_id) do
+    def init(source, torrent, hash, peer_id, peer_supervisor) do
       status = DownloadStatus.for_torrent(torrent.info)
 
       %__MODULE__{
@@ -34,7 +43,8 @@ defmodule Torrentex.Torrent.Torrent do
         info_hash: hash,
         peer_id: peer_id,
         tracker_response: nil,
-        download_status: status
+        download_status: status,
+        peer_supervisor: peer_supervisor
       }
     end
   end
@@ -48,11 +58,13 @@ defmodule Torrentex.Torrent.Torrent do
     {torrent, info_hash} = Parser.decode_torrent(source)
     peer_id = Tracker.generate_peer_id()
 
-    state = State.init(source, torrent, info_hash, peer_id)
+    {:ok, peer_supervisor} =  DynamicSupervisor.start_link(strategy: :one_for_one)
+
+    state = State.init(source, torrent, info_hash, peer_id, peer_supervisor)
 
     Logger.info("Starting torrent for state #{inspect(state.torrent)}")
     send(self(), {:call_tracker, "started"})
-    Process.flag(:trap_exit, true)
+    # Process.flag(:trap_exit, true)
     {:ok, state}
   end
 
@@ -66,12 +78,12 @@ defmodule Torrentex.Torrent.Torrent do
     {:reply, state[:torrent], state}
   end
 
-  # workers in case they die.
-  @impl true
-  def handle_info({:EXIT, from, reason}, state) do
-    Logger.info("Process #{inspect(from)} exited with reason #{inspect(reason)}")
-    {:noreply, state}
-  end
+  # # workers in case they die.
+  # @impl true
+  # def handle_info({:EXIT, from, reason}, state) do
+  #   Logger.info("Process #{inspect(from)} exited with reason #{inspect(reason)}")
+  #   {:noreply, state}
+  # end
 
   @impl true
   def handle_info({:call_tracker, event} = evt, %State{} = state) do
@@ -106,9 +118,8 @@ defmodule Torrentex.Torrent.Torrent do
     Logger.debug("New peers are #{inspect(new_peers)}")
 
     new_peers
-    |> Enum.map(fn peer ->
-      PeerConnection.start_link(peer, state.peer_id, state.info_hash, state.torrent)
-    end)
+    |> Enum.map(&start_peer_connection(&1, state))
+    |> IO.inspect()
 
     Logger.debug("Tracker retry after #{response["interval"]}")
     Process.send_after(self(), {:call_tracker, nil}, response["interval"] * 1000)
@@ -116,8 +127,27 @@ defmodule Torrentex.Torrent.Torrent do
     {:noreply, updated_state}
   end
 
+  defp start_peer_connection(%Peer{} = peer, state) do
+    spec = %{
+      id: Peer.show(peer),
+      start:
+        {PeerConnection, :start_link,
+         [[
+           peer: peer,
+           peer_id: state.peer_id,
+           info_hash: state.info_hash,
+           metainfo: state.torrent
+         ]]}
+    }
+
+    {:ok, pid} = DynamicSupervisor.start_child(state.peer_supervisor, spec)
+    pid
+  end
+
   @impl true
   def terminate(reason, state) do
-    Logger.info("Worker for torrent #{state.source} terminating with reason #{reason}")
+    Logger.info(
+      "Worker for torrent #{inspect(state.source)} terminating with reason #{inspect(reason)}"
+    )
   end
 end

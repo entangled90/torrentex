@@ -1,5 +1,6 @@
 defmodule Torrentex.Torrent.Tracker do
   require Logger
+  alias Torrentex.Torrent.Peer
 
   def generate_peer_id() do
     :crypto.hash(:sha, "#{inspect(node())}-#{:os.system_time(:millisecond)}}")
@@ -32,8 +33,9 @@ defmodule Torrentex.Torrent.Tracker do
 
     Logger.info("Tracker uri is #{uri}")
 
-    with {:ok, {{_, 200, _status_string}, _header, body}} <-
+    with {:ok, {{_, status_code, _status_string}, _header, body}} <-
            :httpc.request(:get, {uri, []}, [], []),
+         {:ok, body} <- if(status_code == 200, do: {:ok, body}, else: {:error, status_code}),
          {:ok, decoded} <- Bento.decode(body) do
       error = decoded["failure reason"]
 
@@ -46,6 +48,7 @@ defmodule Torrentex.Torrent.Tracker do
     end
   end
 
+  @spec decode_peers(binary()) :: list(Peer.t())
   defp decode_peers(peers) when is_list(peers), do: peers
 
   # Decode response binary format
@@ -54,6 +57,6 @@ defmodule Torrentex.Torrent.Tracker do
   defp decode_peers(<<ip1::8, ip2::8, ip3::8, ip4::8, port::16, tail::binary>> = peers)
        when is_binary(peers) do
     ip = {ip1, ip2, ip3, ip4}
-    [%{ip: ip, port: port, id: nil} | decode_peers(tail)]
+    [%Peer{ip: ip, port: port, id: nil} | decode_peers(tail)]
   end
 end

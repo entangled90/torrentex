@@ -1,5 +1,7 @@
 defmodule Torrentex.Torrent.PeerConnection do
   alias Torrentex.Torrent.WireProtocol
+  alias Torrentex.Torrent.Peer
+
   use GenServer
   require Logger
 
@@ -22,13 +24,17 @@ defmodule Torrentex.Torrent.PeerConnection do
     ]
   end
 
-  def start_link(peer, peer_id, info_hash, metainfo) do
-    Logger.debug("Starting connection for peer #{inspect(peer)}")
-    GenServer.start_link(__MODULE__, [peer, peer_id, info_hash, metainfo])
+  def start_link(args) do
+    Logger.debug("Starting connection with args #{inspect(args)}")
+    GenServer.start_link(__MODULE__, args)
   end
 
   @impl true
-  def init([peer, peer_id, info_hash, metainfo]) do
+  def init(args) do
+    peer = Keyword.fetch!(args, :peer)
+    peer_id = Keyword.fetch!(args, :peer_id)
+    info_hash = Keyword.fetch!(args, :info_hash)
+    metainfo = Keyword.fetch!(args, :metainfo)
     Process.send_after(self(), :keep_alive, 30_000)
     Logger.metadata(peer: peer)
 
@@ -46,7 +52,11 @@ defmodule Torrentex.Torrent.PeerConnection do
   def handle_continue(peer, %State{} = state) do
     case connect(peer) do
       {:ok, socket} ->
-        send_msg(socket, WireProtocol.handshake(state.info_hash, state.my_peer_id) |> WireProtocol.encode)
+        send_msg(
+          socket,
+          WireProtocol.handshake(state.info_hash, state.my_peer_id) |> WireProtocol.encode()
+        )
+
         {:noreply, %{state | socket: socket}}
 
       {:error, :econnrefused} ->
@@ -89,7 +99,7 @@ defmodule Torrentex.Torrent.PeerConnection do
   end
 
   defp send_msg(socket, msg) do
-    :gen_tcp.send(socket, msg)
+    :ok = :gen_tcp.send(socket, msg)
   end
 
   defp handle_msg({:handshake, {peer, handshake_hash}}, %State{info_hash: info_hash} = state)

@@ -50,7 +50,8 @@ defmodule Torrentex.Torrent.WireProtocol do
   @spec bitfield(MapSet.t(integer()), integer()) :: message()
   def bitfield(set, len), do: {:bitfield, {set, len}}
 
-  def handshake(peer_id, info_hash) when is_20_bytes(info_hash) and is_20_bytes(peer_id), do: {:handshake, {peer_id, info_hash}}
+  def handshake(peer_id, info_hash) when is_20_bytes(info_hash) and is_20_bytes(peer_id),
+    do: {:handshake, {peer_id, info_hash}}
 
   @spec parseMulti(binary) :: [message()]
   def parseMulti(binary) do
@@ -115,7 +116,6 @@ defmodule Torrentex.Torrent.WireProtocol do
   end
 
   def parse(bin) when is_binary(bin), do: {bin, nil}
-
 
   @spec encode(message()) :: <<_::40, _::_*8>>
   def encode({:choke, nil}), do: <<1::32, 0::8>>
