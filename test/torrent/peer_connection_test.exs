@@ -9,8 +9,8 @@ defmodule Torrentex.Torrent.PeerConnectionTest do
     # peer_id & info hash have the same length.
     <<info_hash::binary>> = Tracker.generate_peer_id()
 
-    {"", {hash, id}} =
-      WireProtocol.handshake(info_hash, peer_id) |> WireProtocol.match_handshake()
+    {"", {:handshake, {hash, id}}} =
+      WireProtocol.handshake(info_hash, peer_id) |> WireProtocol.encode() |> WireProtocol.parse()
 
     assert hash == info_hash
     assert id == peer_id

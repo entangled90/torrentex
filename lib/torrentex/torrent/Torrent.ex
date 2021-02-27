@@ -115,11 +115,8 @@ defmodule Torrentex.Torrent.Torrent do
         |> MapSet.difference(MapSet.new(state.tracker_response["peers"]))
       end
 
-    Logger.debug("New peers are #{inspect(new_peers)}")
-
     new_peers
     |> Enum.map(&start_peer_connection(&1, state))
-    |> IO.inspect()
 
     Logger.debug("Tracker retry after #{response["interval"]}")
     Process.send_after(self(), {:call_tracker, nil}, response["interval"] * 1000)

@@ -36,6 +36,8 @@ defmodule Torrentex.Torrent.WireProtocolTest do
 
   def positive_generator, do: StreamData.integer(0..1024)
 
+  def peer_id_generator, do: StreamData.binary(length: 20)
+
   def event_generator do
     tuple_three = StreamData.tuple({positive_generator, positive_generator, positive_generator})
 
@@ -58,7 +60,8 @@ defmodule Torrentex.Torrent.WireProtocolTest do
       tuple_three |> StreamData.map(&{:cancel, &1}),
       StreamData.integer(0..65535) |> StreamData.map(&WireProtocol.port(&1)),
       piece_generator,
-      bitfield_gen()
+      bitfield_gen(),
+      StreamData.tuple({peer_id_generator, peer_id_generator}) |> StreamData.map(fn {peer_id, hash} -> WireProtocol.handshake(peer_id, hash)end )
     ])
   end
 

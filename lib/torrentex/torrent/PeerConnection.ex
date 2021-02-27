@@ -25,18 +25,19 @@ defmodule Torrentex.Torrent.PeerConnection do
   end
 
   def start_link(args) do
-    Logger.debug("Starting connection with args #{inspect(args)}")
     GenServer.start_link(__MODULE__, args)
   end
 
   @impl true
   def init(args) do
-    peer = Keyword.fetch!(args, :peer)
-    peer_id = Keyword.fetch!(args, :peer_id)
-    info_hash = Keyword.fetch!(args, :info_hash)
+    peer = Keyword.fetch!(args, :peer )
+    peer_id = Keyword.fetch!(args, :peer_id )
+    info_hash = Keyword.fetch!(args,:info_hash )
     metainfo = Keyword.fetch!(args, :metainfo)
     Process.send_after(self(), :keep_alive, 30_000)
-    Logger.metadata(peer: peer)
+    Logger.metadata(peer: Peer.show(peer))
+
+    Logger.debug("Starting connection for peer #{Peer.show(peer)}")
 
     {:ok,
      %State{
@@ -45,23 +46,12 @@ defmodule Torrentex.Torrent.PeerConnection do
        socket: nil,
        info_hash: info_hash,
        metainfo: metainfo
-     }, {:continue, peer}}
+     }, {:continue, :ok}}
   end
 
   @impl true
-  def handle_continue(peer, %State{} = state) do
-    case connect(peer) do
-      {:ok, socket} ->
-        send_msg(
-          socket,
-          WireProtocol.handshake(state.info_hash, state.my_peer_id) |> WireProtocol.encode()
-        )
-
-        {:noreply, %{state | socket: socket}}
-
-      {:error, :econnrefused} ->
-        {:stop, :econnrefused, state}
-    end
+  def handle_continue(:ok, %State{} = state) do
+    connect(state)
   end
 
   @impl true
@@ -94,8 +84,18 @@ defmodule Torrentex.Torrent.PeerConnection do
     end
   end
 
-  defp connect(%{ip: ip, port: port}) do
-    :gen_tcp.connect(ip, port, [:binary, {:active, true}], 30_000)
+  defp connect(%State{peer: %Peer{ip: ip, port: port}} = state) do
+    case :gen_tcp.connect(ip, port, [:binary, {:active, true}], 30_000) do
+      {:ok, socket} ->
+        send_msg(
+          socket,
+          WireProtocol.handshake(state.my_peer_id, state.info_hash) |> WireProtocol.encode()
+        )
+        {:noreply, %{state | socket: socket}}
+
+      {:error, :econnrefused} ->
+        {:stop, :econnrefused, state}
+    end
   end
 
   defp send_msg(socket, msg) do
@@ -110,5 +110,18 @@ defmodule Torrentex.Torrent.PeerConnection do
   defp handle_msg({:hanshake, _}, _) do
     Logger.info("Invalid info hash received, stopping")
     Process.exit(self(), :exit)
+  end
+
+  defp handle_msg({:unchoke, _}, state) do
+    %{state| choked: false}
+  end
+
+  defp handle_msg({:choke, _}, state) do
+    %{state| choked: true}
+  end
+
+  defp handle_msg({:bitfield, bit}, state) do
+    Logger.debug("Received bitfield #{inspect bit}")
+    state
   end
 end
