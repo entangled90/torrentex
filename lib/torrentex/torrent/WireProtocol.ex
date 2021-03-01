@@ -134,11 +134,8 @@ defmodule Torrentex.Torrent.WireProtocol do
   def encode({:bitfield, {set, len}}) do
     bits =
       0..(len - 1)
-      |> Enum.map(fn x -> if MapSet.member?(set, x), do: true, else: false end)
-      |> Enum.reduce(<<>>, fn present, acc ->
-        bit = if present, do: <<1::1>>, else: <<0::1>>
-        <<acc::bitstring, bit::bitstring>>
-      end)
+      |> Enum.map(fn x -> if MapSet.member?(set, x), do: <<1::1>>, else: <<0::1>> end)
+      |> :erlang.list_to_bitstring()
       |> pad_to_binary()
 
     <<1 + byte_size(bits)::32, 5::8, bits::binary>>
