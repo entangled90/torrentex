@@ -61,7 +61,8 @@ defmodule Torrentex.Torrent.WireProtocolTest do
       StreamData.integer(0..65535) |> StreamData.map(&WireProtocol.port(&1)),
       piece_generator,
       bitfield_gen(),
-      StreamData.tuple({peer_id_generator, peer_id_generator}) |> StreamData.map(fn {peer_id, hash} -> WireProtocol.handshake(peer_id, hash)end )
+      StreamData.tuple({peer_id_generator, peer_id_generator})
+      |> StreamData.map(fn {peer_id, hash} -> WireProtocol.handshake(peer_id, hash) end)
     ])
   end
 

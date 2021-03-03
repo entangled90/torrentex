@@ -4,16 +4,25 @@ defmodule Torrentex.Application do
   @moduledoc false
 
   use Application
+  require Logger
 
   @impl true
   def start(_type, _args) do
     children = [
       # Starts a worker by calling: Torrentex.Worker.start_link(arg)
+      {Torrentex.Torrent.Torrent, "data/ubuntu-20.04.2.0-desktop-amd64.iso.torrent"}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Torrentex.Supervisor]
-    Supervisor.start_link(children, opts)
+    {:ok, _pid} = Supervisor.start_link(children, opts)
+
+    receive do
+      msg ->
+        Logger.info "Received msg #{inspect msg}, stopping"
+        Process.exit(self(), :normal)
+    end
   end
+
 end

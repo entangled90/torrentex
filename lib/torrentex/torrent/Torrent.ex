@@ -6,11 +6,14 @@ defmodule Torrentex.Torrent.Torrent do
   {:ok, pid} = Torrentex.Torrent.Torrent.start_link("data/Fedora-KDE-Live-x86_64-33.torrent")
 
   """
-  alias Torrentex.Torrent.Parser
-  alias Torrentex.Torrent.Tracker
-  alias Torrentex.Torrent.PeerConnection
-  alias Torrentex.Torrent.Peer
-  alias Torrentex.Torrent.Pieces
+  alias Torrentex.Torrent.{
+    FilesWriter,
+    Parser,
+    Peer,
+    PeerConnectionSupervisor,
+    Pieces,
+    Tracker
+  }
 
   use GenServer
   require Logger
@@ -20,11 +23,15 @@ defmodule Torrentex.Torrent.Torrent do
       defstruct downloaded: 0, uploaded: 0, left: 0
 
       def for_torrent(info) do
-        length = case info do
-          %Bento.Metainfo.SingleFile{length: length} -> length
-          %Bento.Metainfo.MultiFile{files: files} ->
-            files |> Enum.map(fn file -> file["length"] end) |> Enum.reduce(& &1 + &2)
-        end
+        length =
+          case info do
+            %Bento.Metainfo.SingleFile{length: length} ->
+              length
+
+            %Bento.Metainfo.MultiFile{files: files} ->
+              files |> Enum.map(fn file -> file["length"] end) |> Enum.reduce(&(&1 + &2))
+          end
+
         %__MODULE__{left: length}
       end
     end
@@ -33,44 +40,74 @@ defmodule Torrentex.Torrent.Torrent do
       :source,
       :torrent,
       :info_hash,
+      :hashes,
       :peer_id,
       :tracker_response,
       :download_status,
       :peer_supervisor,
-      :pieces_agent
+      :pieces_agent,
+      :files_writer
     ]
 
-    def init(source, torrent, hash, peer_id, peer_supervisor, pieces_agent) do
+    def init(source, torrent, hash, peer_id, peer_supervisor, pieces_agent, files_writer) do
       status = DownloadStatus.for_torrent(torrent.info)
+      hashes = torrent.info.pieces |> binary_in_chunks(20) |> Enum.with_index() |> Map.new()
 
       %__MODULE__{
         source: source,
         torrent: torrent,
         info_hash: hash,
+        hashes: hashes,
         peer_id: peer_id,
         tracker_response: nil,
         download_status: status,
         peer_supervisor: peer_supervisor,
-        pieces_agent: pieces_agent
+        pieces_agent: pieces_agent,
+        files_writer: files_writer
       }
+    end
+
+    @spec binary_in_chunks(binary, pos_integer()) :: [binary]
+    def binary_in_chunks(binary, chunk_len) when is_binary(binary) and is_integer(chunk_len) do
+      if byte_size(binary) > chunk_len do
+        <<chunk::binary-size(chunk_len), rest::binary>> = binary
+        [chunk | binary_in_chunks(rest, chunk_len)]
+      else
+        [binary]
+      end
     end
   end
 
+  @spec start_link(any) :: :ignore | {:error, any} | {:ok, pid}
   def start_link(source) do
     GenServer.start_link(__MODULE__, source)
   end
 
   @impl true
-  def init(source) when is_binary(source) do
+  def init(source)  do
     {torrent, info_hash} = Parser.decode_torrent(source)
-    peer_id = Tracker.generate_peer_id()
-    num_pieces = div(byte_size(torrent.info.pieces), 20) # each hash is 20 byte
-    {:ok, peer_supervisor} =  DynamicSupervisor.start_link(strategy: :one_for_one)
-    {:ok, pieces_agent} = Pieces.start_link(num_pieces: num_pieces)
-    state = State.init(source, torrent, info_hash, peer_id, peer_supervisor, pieces_agent)
 
-    Process.flag(:trap_exit, true)
-    Logger.info("Starting torrent for state #{inspect(state.torrent)}")
+    Logger.info("Starting torrent for state #{inspect(torrent)}")
+
+    peer_id = Tracker.generate_peer_id()
+    # each hash is 20 byte
+    num_pieces = div(byte_size(torrent.info.pieces), 20)
+    {:ok, peer_supervisor} = PeerConnectionSupervisor.start_link([])
+    {:ok, files_writer} = FilesWriter.start_link(metainfo: torrent.info)
+
+    %{piece_length: piece_length, short_pieces: short_pieces} =
+      FilesWriter.piece_length_info(files_writer)
+
+    {:ok, pieces_agent} =
+      Pieces.start_link(
+        num_pieces: num_pieces,
+        piece_lengths: short_pieces,
+        default_piece_length: piece_length
+      )
+
+    state =
+      State.init(source, torrent, info_hash, peer_id, peer_supervisor, pieces_agent, files_writer)
+
     send(self(), {:call_tracker, "started"})
     {:ok, state}
   end
@@ -131,39 +168,19 @@ defmodule Torrentex.Torrent.Torrent do
     {:noreply, updated_state}
   end
 
-  @impl true
-  def handle_info( {:EXIT, pid, reason}, state) do
-    role = case pid do
-      p when p == state.pieces_agent   ->      :pieces_agent
-      p when p == state.peer_supervisor ->       :peer_supervisor
-      _ ->       :unknown
-    end
-    Logger.warn "Process with pid #{inspect pid} with role #{role} shutting down with reason #{inspect reason}"
-  end
+  defp start_peer_connection(%Peer{} = peer, %State{} = state) do
+    args = [
+      peer: peer,
+      peer_id: state.peer_id,
+      info_hash: state.info_hash,
+      metainfo: state.torrent,
+      pieces_agent: state.pieces_agent,
+      files_writer: state.files_writer
+    ]
 
-  defp start_peer_connection(%Peer{} = peer, %State{}=state) do
-    spec = %{
-      id: Peer.show(peer),
-      start:
-        {PeerConnection, :start_link,
-         [[
-           peer: peer,
-           peer_id: state.peer_id,
-           info_hash: state.info_hash,
-           metainfo: state.torrent,
-           pieces_agent: state.pieces_agent
-         ]]},
-      restart: :transient
-    }
+    {:ok, pid} =
+      PeerConnectionSupervisor.start_peer_connection(state.peer_supervisor, args)
 
-    {:ok, pid} = DynamicSupervisor.start_child(state.peer_supervisor, spec)
     pid
-  end
-
-  @impl true
-  def terminate(reason, state) do
-    Logger.warn(
-      "Torrent download #{inspect(state.source)} terminating with reason #{inspect(reason)}"
-    )
   end
 end

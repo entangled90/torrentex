@@ -1,5 +1,5 @@
 import Config
 
 config :logger, :console,
-  format: "[$level] $message $metadata\n",
+  format: "$time $metadata [$level] $message \n",
   metadata: [:error_code, :peer]
