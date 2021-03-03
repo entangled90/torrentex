@@ -84,7 +84,7 @@ defmodule Torrentex.Torrent.Torrent do
   end
 
   @impl true
-  def init(source)  do
+  def init(source) do
     {torrent, info_hash} = Parser.decode_torrent(source)
 
     Logger.info("Starting torrent for state #{inspect(torrent)}")
@@ -110,11 +110,6 @@ defmodule Torrentex.Torrent.Torrent do
 
     send(self(), {:call_tracker, "started"})
     {:ok, state}
-  end
-
-  @impl true
-  def init(_source) do
-    {:error, "Invalid argument, expecting a binary"}
   end
 
   @impl true
@@ -175,11 +170,11 @@ defmodule Torrentex.Torrent.Torrent do
       info_hash: state.info_hash,
       metainfo: state.torrent,
       pieces_agent: state.pieces_agent,
-      files_writer: state.files_writer
+      files_writer: state.files_writer,
+      hashes: state.hashes
     ]
 
-    {:ok, pid} =
-      PeerConnectionSupervisor.start_peer_connection(state.peer_supervisor, args)
+    {:ok, pid} = PeerConnectionSupervisor.start_peer_connection(state.peer_supervisor, args)
 
     pid
   end

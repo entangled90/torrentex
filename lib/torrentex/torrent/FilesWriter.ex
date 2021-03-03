@@ -4,10 +4,38 @@ defmodule Torrentex.Torrent.FilesWriter do
   alias Torrentex.Torrent.Torrent
 
   # 16 KB
-  @sub_piece_length 16 * 1024
+  @sub_piece_length :math.pow(2, 14) |> round()
 
   defmodule State do
+    defmodule File do
+      @enforce_keys [:length, :num_pieces, :pieces_for_file, :starting_idx]
+
+      @type t() :: %__MODULE__{
+              length: pos_integer(),
+              num_pieces: pos_integer(),
+              pieces_for_file: [binary()],
+              starting_idx: non_neg_integer(),
+              downloaded_pieces: MapSet.t(integer())
+            }
+      defstruct [
+        :length,
+        :num_pieces,
+        :pieces_for_file,
+        :starting_idx,
+        downloaded_pieces: MapSet.new(),
+        file_handle: nil
+      ]
+    end
+
     @enforce_keys [:metainfo, :download_folder, :piece_length, :pieces]
+    @type t() :: %__MODULE__{
+            metainfo: map(),
+            download_folder: binary(),
+            piece_length: pos_integer(),
+            pieces: binary(),
+            download_status: MapSet.t(integer()),
+            files: map()
+          }
     defstruct [:metainfo, :download_folder, :piece_length, :pieces, :download_status, :files]
   end
 
@@ -34,6 +62,10 @@ defmodule Torrentex.Torrent.FilesWriter do
     GenServer.call(pid, :piece_length_infos)
   end
 
+  def persist(pid, idx, bin) do
+    GenServer.call(pid, {:persist, idx, bin})
+  end
+
   @impl true
   def handle_call(:piece_length_infos, _from, state) do
     {:reply,
@@ -44,13 +76,28 @@ defmodule Torrentex.Torrent.FilesWriter do
   end
 
   @impl true
-  def handle_continue(:ok, state) do
+  def handle_call({:persist, idx, bin}, _from, %State{} = state) do
+    Logger.debug("Persisting piece #{idx}")
+
+    for file_info <- state.files |> Map.values do
+      if file_info.starting_idx <= idx && file_info.starting_idx + file_info.num_pieces > idx do
+        offset = (idx - file_info.starting_idx) * state.piece_length
+        :file.position(file_info.file_handle, offset)
+        :ok = :file.write(file_info.file_handle, bin)
+      end
+    end
+
+    {:reply, :ok, state}
+  end
+
+  @impl true
+  def handle_continue(:ok, %State{} = state) do
     {:ok, state} = load_from_disk(state)
     Logger.info("Files loaded from disk #{inspect(state)}")
     {:noreply, state}
   end
 
-  defp load_from_disk(%{metainfo: metainfo} = state) do
+  defp load_from_disk(%State{metainfo: metainfo} = state) do
     base_folder = state.download_folder
 
     files =
@@ -59,61 +106,68 @@ defmodule Torrentex.Torrent.FilesWriter do
           file_path = Path.join(base_folder, name)
 
           %{
-            file_path => %{
+            file_path => %State.File{
               length: len,
               num_pieces: (len / state.piece_length) |> ceil(),
-              pieces_for_file: state.pieces
+              pieces_for_file: Torrent.State.binary_in_chunks(state.pieces, 20),
+              starting_idx: 0
             }
           }
 
         %{files: files} ->
-          {files, _ } =for file <- files, reduce: {%{}, state.pieces} do
-            {map, pieces} ->
-              path = Path.join(base_folder, file["path"])
-              len = file["length"]
-              num_pieces = (len / state.piece_length) |> ceil()
-              {raw_pieces, pieces} = pieces |> :erlang.split_binary(num_pieces)
-              # raw_piecs is a single concatenated binary
-              pieces_for_file = Torrent.State.binary_in_chunks(raw_pieces, 20)
+          {files, _} =
+            for file <- files, reduce: {%{}, state.pieces, 0} do
+              {map, pieces, starting_idx} ->
+                path = Path.join(base_folder, file["path"])
+                len = file["length"]
+                num_pieces = (len / state.piece_length) |> ceil()
+                {raw_pieces, pieces} = pieces |> :erlang.split_binary(num_pieces)
+                # raw_piecs is a single concatenated binary
+                pieces_for_file = Torrent.State.binary_in_chunks(raw_pieces, 20)
 
-              new_map =
-                Map.put(map, path, %{
-                  length: len,
-                  num_pieces: num_pieces,
-                  pieces_for_file: pieces_for_file
-                })
+                new_map =
+                  Map.put(map, path, %State.File{
+                    length: len,
+                    num_pieces: num_pieces,
+                    pieces_for_file: pieces_for_file,
+                    starting_idx: starting_idx
+                  })
 
-              {new_map, pieces}
-          end
+                {new_map, pieces, starting_idx + num_pieces}
+            end
+
           files
       end
 
     files =
       for {path, file_info} <- files, into: %{} do
-        updated_info =
-          Map.put(file_info, :downloaded_pieces, load_file(path, state.piece_length, file_info))
+        {file_handle, downloaded_pieces} = load_file(path, state.piece_length, file_info)
 
-        {path, updated_info}
+        {path, %{file_info | downloaded_pieces: downloaded_pieces, file_handle: file_handle}}
       end
 
     {:ok, %{state | files: files, piece_length: state.piece_length}}
   end
 
-  @spec load_file(binary(), pos_integer(), map()) :: MapSet.t(integer())
+  @spec load_file(binary(), pos_integer(), map()) :: {:file.io_device(), MapSet.t(integer())}
   def load_file(path, piece_length, %{pieces_for_file: pieces_for_file})
       when piece_length > 0 and pieces_for_file > 0 do
-    case File.stat(path) do
-      {:ok, _} ->
-        File.stream!(path, [], piece_length)
-        |> Stream.zip(pieces_for_file)
-        |> Stream.with_index()
-        |> Stream.filter(fn {{chunk, hash}, _} -> :crypto.hash(:sha, chunk) == hash end)
-        |> Stream.map(fn {{_, _}, idx} -> idx end)
-        |> MapSet.new()
+    downloaded_pieces =
+      case File.stat(path) do
+        {:ok, _} ->
+          File.stream!(path, [], piece_length)
+          |> Enum.zip(pieces_for_file)
+          |> Enum.with_index()
+          |> Enum.filter(fn {{chunk, hash}, _} -> :crypto.hash(:sha, chunk) == hash end)
+          |> Enum.map(fn {{_, _}, idx} -> idx end)
+          |> MapSet.new()
 
-      {:error, :enoent} ->
-        MapSet.new()
-    end
+        {:error, :enoent} ->
+          MapSet.new()
+      end
+
+    {:ok, file} = :file.open(path, [:write, :raw])
+    {file, downloaded_pieces}
   end
 
   @spec short_pieces(map(), pos_integer()) :: any()
@@ -147,7 +201,7 @@ defmodule Torrentex.Torrent.FilesWriter do
           size
         end
 
-      {id, len}
+      {id * size, len}
     end
   end
 end

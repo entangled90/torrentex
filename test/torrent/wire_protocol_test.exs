@@ -13,7 +13,19 @@ defmodule Torrentex.Torrent.WireProtocolTest do
 
   property "wire protocol encode/decode multiple roundtrip" do
     check all(events <- StreamData.list_of(event_generator(), min_length: 1, max_length: 128)) do
-      msgs =
+      {msgs, <<>>} =
+        events
+        |> Enum.map(&WireProtocol.encode(&1))
+        |> Enum.reduce(&(&1 <> &2))
+        |> WireProtocol.parseMulti()
+
+      assert events == msgs
+    end
+  end
+
+  property "wire protocol encode/decode multiple roundtrip plus some binary left" do
+    check all(events <- StreamData.list_of(event_generator(), min_length: 1, max_length: 128)) do
+      {msgs, <<>>} =
         events
         |> Enum.map(&WireProtocol.encode(&1))
         |> Enum.reduce(&(&1 <> &2))
@@ -29,6 +41,21 @@ defmodule Torrentex.Torrent.WireProtocolTest do
         event |> WireProtocol.encode() |> append_bits(remaining_bytes) |> WireProtocol.parse()
 
       assert decoded == event
+    end
+  end
+
+  property "proper piece test: message split into multiple packets" do
+    piece_len = :math.pow(2, 14) |> round()
+
+    check all(bin <- StreamData.binary(length: piece_len),
+              idx <- StreamData.positive_integer(),
+              begin <- StreamData.positive_integer()) do
+      message = WireProtocol.piece(idx, begin, bin)
+      encoded = WireProtocol.encode(message)
+      <<first::binary-size(1024), snd::binary>> = encoded
+      {[], first} = WireProtocol.parseMulti(first)
+      {[decoded], <<>>} = WireProtocol.parseMulti(first <> snd)
+      assert message == decoded
     end
   end
 

@@ -16,9 +16,9 @@ defmodule Torrentex.Torrent.PeerConnectionSupervisor do
     DynamicSupervisor.start_child(pid, peer_child_spec(args))
   end
 
-
   defp peer_child_spec(args) do
     peer = Keyword.fetch!(args, :peer)
+
     %{
       id: Peer.show(peer),
       start: {PeerConnection, :start_link, [args]},

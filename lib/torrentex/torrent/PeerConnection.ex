@@ -7,7 +7,6 @@ defmodule Torrentex.Torrent.PeerConnection do
   use GenServer
   require Logger
 
-
   defmodule State do
     @enforce_keys [
       :socket,
@@ -16,7 +15,8 @@ defmodule Torrentex.Torrent.PeerConnection do
       :info_hash,
       :pieces_agent,
       :files_writer,
-      :max_downloading
+      :max_downloading,
+      :hashes
     ]
     defstruct [
       :socket,
@@ -26,6 +26,8 @@ defmodule Torrentex.Torrent.PeerConnection do
       :pieces_agent,
       :files_writer,
       :max_downloading,
+      :hashes,
+      partial_packets: <<>>,
       other_peer_id: nil,
       handshake_done: false,
       have: MapSet.new(),
@@ -50,10 +52,11 @@ defmodule Torrentex.Torrent.PeerConnection do
     pieces_agent = Keyword.fetch!(args, :pieces_agent)
     files_writer = Keyword.fetch!(args, :files_writer)
     max_downloading = Keyword.get(args, :max_downloading, 5)
+    hashes = Keyword.fetch!(args, :hashes)
     Process.send_after(self(), :keep_alive, 30_000)
     Logger.metadata(peer: Peer.show(peer))
 
-    Logger.debug("Starting connection for peer #{Peer.show(peer)}")
+    Logger.info("Starting connection for peer #{Peer.show(peer)}")
 
     {:ok,
      %State{
@@ -63,10 +66,10 @@ defmodule Torrentex.Torrent.PeerConnection do
        info_hash: info_hash,
        pieces_agent: pieces_agent,
        files_writer: files_writer,
-       max_downloading: max_downloading
+       max_downloading: max_downloading,
+       hashes: hashes
      }, {:continue, :ok}}
   end
-
 
   @impl true
   def handle_continue(:ok, %State{} = state) do
@@ -74,9 +77,10 @@ defmodule Torrentex.Torrent.PeerConnection do
   end
 
   @impl true
-  def handle_info({:tcp_closed, _pid}, _state) do
-    Logger.debug("Socket is closed. Restarting")
-    raise "tcp socket is closed"
+  def handle_info({:tcp_closed, _pid}, state) do
+    Logger.warn("tcp socket closed. Stopping")
+    # TODO  restart instead of stop
+    {:stop, :normal, state}
   end
 
   @impl true
@@ -86,8 +90,11 @@ defmodule Torrentex.Torrent.PeerConnection do
       raise "Invalid socket sent the message!"
     end
 
+    {msgs, remaining} = WireProtocol.parseMulti(state.partial_packets <> binary)
+    state = %{state | partial_packets: remaining}
+
     state =
-      WireProtocol.parseMulti(binary)
+      msgs
       |> Enum.reduce(state, fn msg, state ->
         Logger.debug("received message #{inspect(msg)}")
         handle_msg(msg, state)
@@ -97,10 +104,7 @@ defmodule Torrentex.Torrent.PeerConnection do
 
     state =
       if !state.choked && downloading_pieces < state.max_downloading do
-        ids =
-          Pieces.start_downloading(state.pieces_agent, state.have,
-            max: state.max_downloading - downloading_pieces
-          )
+        ids = Pieces.start_downloading(state.pieces_agent, state.have, max: 1)
 
         if !state.am_interested do
           send_msg(state.socket, WireProtocol.interested())
@@ -131,13 +135,13 @@ defmodule Torrentex.Torrent.PeerConnection do
   @impl true
   def handle_info(:keep_alive, state) do
     if state.socket do
-      send_msg(state.socket, WireProtocol.keep_alive)
+      send_msg(state.socket, WireProtocol.keep_alive())
       Process.send_after(self(), :keep_alive, 10_000)
     end
   end
 
   defp connect(%State{peer: %Peer{ip: ip, port: port}} = state) do
-    case :gen_tcp.connect(ip, port, [:binary, {:active, true}], 30_000) do
+    case :gen_tcp.connect(ip, port, [:binary, :inet, {:active, true}, {:packet, 0}], 30_000) do
       {:ok, socket} ->
         send_msg(
           socket,
@@ -146,15 +150,15 @@ defmodule Torrentex.Torrent.PeerConnection do
 
         {:noreply, %{state | socket: socket}}
 
-      {:error, :timeout} ->
-        {:stop, :normal, state}
-      {:error, :econnrefused} ->
+      {:error, reason} ->
+        Logger.warn("Cannot connect to peer, for reason #{reason}")
         {:stop, :normal, state}
     end
   end
 
   defp send_msg(socket, msg) do
-    Logger.debug "sending msg #{inspect msg}"
+    Logger.debug("sending msg #{inspect(msg)}")
+
     case :gen_tcp.send(socket, WireProtocol.encode(msg)) do
       :ok -> :ok
       {:error, reason} -> Process.exit(self(), reason)
@@ -187,4 +191,23 @@ defmodule Torrentex.Torrent.PeerConnection do
     %{state | have: MapSet.put(state.have, idx)}
   end
 
+  defp handle_msg({:piece, {idx, begin, block}}, %State{} = state) do
+    Logger.debug("Received piece #{idx}, #{begin}")
+
+    {:ok, piece} = state.downloading[idx] |> Piece.add_sub_piece(begin, block)
+    if piece.complete do
+      Logger.info "Piece #{idx} is completed."
+      piece_hash = Map.get(state.hashes, idx)
+      bin = piece |> Piece.binary(piece_hash)
+      FilesWriter.persist(state.files_writer, idx, bin)
+      Pieces.downloaded(state.pieces_agent, idx)
+      %{state | downloading: state.downloading |> Map.delete(idx)}
+    else
+      %{state | downloading: %{state.downloading| idx => piece}}
+    end
+  end
+
+  def handle_msg({:keep_alive, nil}, _from, state) do
+    state
+  end
 end

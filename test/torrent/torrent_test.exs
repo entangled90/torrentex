@@ -17,7 +17,7 @@ defmodule Torrentex.Torrent.ChunkTest do
   end
 
   test "binary_in_chunks - specific input" do
-    binary = <<0 :: 16>>
+    binary = <<0::16>>
     chunk_len = 1
     chunked = Torrent.State.binary_in_chunks(binary, chunk_len)
     assert chunked == [<<0::8>>, <<0::8>>]

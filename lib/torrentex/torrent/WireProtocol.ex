@@ -65,15 +65,19 @@ defmodule Torrentex.Torrent.WireProtocol do
   @spec cancel(integer, pos_integer, pos_integer) :: message()
   def cancel(index, begin, length), do: {:cancel, {index, begin, length}}
 
-  @spec parseMulti(binary) :: [message()]
+  @spec parseMulti(binary) :: {[message()], binary()}
   def parseMulti(binary) do
     parseMulti(binary, [])
   end
 
   defp parseMulti(binary, acc) do
     {rest, msg} = parse(binary)
-    acc = [msg | acc]
-    if byte_size(rest) > 0, do: parseMulti(rest, acc), else: acc
+    if msg != nil do
+      acc = [msg | acc]
+      if byte_size(rest) > 0, do: parseMulti(rest, acc), else: {acc, <<>>}
+    else
+      {acc, rest}
+    end
   end
 
   @spec parse(<<_::32, _::_*8>>) :: {binary, message() | nil}

@@ -11,6 +11,6 @@ defmodule Torrentex.Torrent.TrackerTest do
     {:ok, decoded} =
       Tracker.call_tracker(torrent.announce, hash, Tracker.generate_peer_id(), status, "started")
 
-    assert length(decoded["peers"]) > 1
+    assert length(decoded["peers"]) > 0
   end
 end
