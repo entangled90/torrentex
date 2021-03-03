@@ -195,15 +195,16 @@ defmodule Torrentex.Torrent.PeerConnection do
     Logger.debug("Received piece #{idx}, #{begin}")
 
     {:ok, piece} = state.downloading[idx] |> Piece.add_sub_piece(begin, block)
+
     if piece.complete do
-      Logger.info "Piece #{idx} is completed."
+      Logger.info("Piece #{idx} is completed.")
       piece_hash = Map.get(state.hashes, idx)
-      bin = piece |> Piece.binary(piece_hash)
+      {:ok, bin} = piece |> Piece.binary(piece_hash)
       FilesWriter.persist(state.files_writer, idx, bin)
       Pieces.downloaded(state.pieces_agent, idx)
       %{state | downloading: state.downloading |> Map.delete(idx)}
     else
-      %{state | downloading: %{state.downloading| idx => piece}}
+      %{state | downloading: %{state.downloading | idx => piece}}
     end
   end
 
