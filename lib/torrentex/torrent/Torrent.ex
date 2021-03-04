@@ -51,7 +51,13 @@ defmodule Torrentex.Torrent.Torrent do
 
     def init(source, torrent, hash, peer_id, peer_supervisor, pieces_agent, files_writer) do
       status = DownloadStatus.for_torrent(torrent.info)
-      hashes = torrent.info.pieces |> binary_in_chunks(20) |> Enum.with_index() |> Map.new()
+
+      hashes =
+        torrent.info.pieces
+        |> binary_in_chunks(20)
+        |> Enum.with_index()
+        |> Enum.map(fn {v, k} -> {k, v} end)
+        |> Map.new()
 
       %__MODULE__{
         source: source,

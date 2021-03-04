@@ -15,7 +15,6 @@ defmodule Torrentex.Torrent.Piece do
 
   @spec add_sub_piece(t(), integer(), binary()) :: {:ok, t()} | {:error, {:wrong_size}}
   def add_sub_piece(piece, begin, sub_piece) when is_binary(sub_piece) do
-
     if begin + byte_size(sub_piece) == piece.piece_length - 1 or
          byte_size(sub_piece) == div(piece.piece_length, piece.num) do
       sub_pieces = Map.put(piece.sub_pieces, begin, sub_piece)

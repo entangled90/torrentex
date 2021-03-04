@@ -199,10 +199,30 @@ defmodule Torrentex.Torrent.PeerConnection do
     if piece.complete do
       Logger.info("Piece #{idx} is completed.")
       piece_hash = Map.get(state.hashes, idx)
-      {:ok, bin} = piece |> Piece.binary(piece_hash)
-      FilesWriter.persist(state.files_writer, idx, bin)
-      Pieces.downloaded(state.pieces_agent, idx)
-      %{state | downloading: state.downloading |> Map.delete(idx)}
+      Logger.info("expected hash is #{inspect(piece_hash)}")
+
+      downloading =
+        case piece |> Piece.binary(piece_hash) do
+          {:ok, bin} ->
+            FilesWriter.persist(state.files_writer, idx, bin)
+            Pieces.downloaded(state.pieces_agent, idx)
+            Map.delete(state.downloading, idx)
+
+          {:error, {:wrong_hash, wrong_bin}} ->
+            bin_size = byte_size(wrong_bin)
+            wrong_hash = :crypto.hash(:sha, wrong_bin)
+
+            Logger.warn(
+              "Wrong hash for piece #{idx}. Piece size #{bin_size}. Expected hash #{
+                Base.encode16(piece_hash)
+              }, actual hash #{Base.encode16(wrong_hash)}"
+            )
+
+            :ok = Pieces.wrong_hash(state.pieces_agent, idx)
+            state.downloading
+        end
+
+      %{state | downloading: downloading}
     else
       %{state | downloading: %{state.downloading | idx => piece}}
     end
