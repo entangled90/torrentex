@@ -3,18 +3,20 @@ defmodule Torrentex.Torrent.PieceTest do
   use ExUnitProperties
   alias Torrentex.Torrent.Piece
 
-  @binary_size 8 * 128
+  @binary_size 128
+  @binary_size_bits 8 * @binary_size
+
   property "piece is not completed until all sub_pieces are inserted" do
     check all(
             piece <- mk_piece(),
             sub_pieces <- subpieces(piece, complete: false)
           ) do
       %Piece{complete: false} =
-        sub_pieces
-        |> Enum.reduce(piece, fn idx, piece ->
-          {:ok, piece} = Piece.add_sub_piece(piece, idx, <<1::@binary_size>>)
-          piece
-        end)
+        for begin <- sub_pieces, reduce: piece do
+          piece ->
+            {:ok, piece} = Piece.add_sub_piece(piece, begin, <<1::@binary_size_bits>>)
+            piece
+        end
     end
   end
 
@@ -24,11 +26,11 @@ defmodule Torrentex.Torrent.PieceTest do
             sub_pieces <- subpieces(piece, complete: true)
           ) do
       %Piece{complete: true} =
-        sub_pieces
-        |> Enum.reduce(piece, fn idx, piece ->
-          {:ok, piece} = Piece.add_sub_piece(piece, idx, <<1::@binary_size>>)
-          piece
-        end)
+        for begin <- sub_pieces, reduce: piece do
+          piece ->
+            {:ok, piece} = Piece.add_sub_piece(piece, begin, <<1::@binary_size_bits>>)
+            piece
+        end
     end
   end
 
@@ -46,13 +48,18 @@ defmodule Torrentex.Torrent.PieceTest do
   end
 
   def mk_piece(),
-    do: StreamData.integer(1..128) |> StreamData.map(&%Piece{num: &1, piece_length: 128})
+    do:
+      StreamData.integer(1..128)
+      |> StreamData.map(&%Piece{num: &1, piece_length: &1 * @binary_size})
 
   def subpieces(piece, opts \\ []) do
     complete = Keyword.fetch!(opts, :complete)
 
-    if complete,
-      do: StreamData.constant(0..(piece.num - 1)),
-      else: StreamData.list_of(StreamData.integer(0..(piece.num - 1)), max_length: piece.num - 1)
+    if complete do
+      StreamData.constant(0..(piece.num - 1) |> Enum.map(&(&1 * @binary_size)))
+    else
+      begins = StreamData.integer(0..(piece.num - 1)) |> StreamData.map(&(&1 * @binary_size))
+      StreamData.list_of(begins, max_length: piece.num - 1)
+    end
   end
 end

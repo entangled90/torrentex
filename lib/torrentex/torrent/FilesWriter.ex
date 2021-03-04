@@ -79,7 +79,7 @@ defmodule Torrentex.Torrent.FilesWriter do
   def handle_call({:persist, idx, bin}, _from, %State{} = state) do
     Logger.debug("Persisting piece #{idx}")
 
-    for file_info <- state.files |> Map.values do
+    for file_info <- state.files |> Map.values() do
       if file_info.starting_idx <= idx && file_info.starting_idx + file_info.num_pieces > idx do
         offset = (idx - file_info.starting_idx) * state.piece_length
         :file.position(file_info.file_handle, offset)

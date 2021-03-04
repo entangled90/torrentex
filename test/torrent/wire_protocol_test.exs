@@ -47,9 +47,11 @@ defmodule Torrentex.Torrent.WireProtocolTest do
   property "proper piece test: message split into multiple packets" do
     piece_len = :math.pow(2, 14) |> round()
 
-    check all(bin <- StreamData.binary(length: piece_len),
-              idx <- StreamData.positive_integer(),
-              begin <- StreamData.positive_integer()) do
+    check all(
+            bin <- StreamData.binary(length: piece_len),
+            idx <- StreamData.positive_integer(),
+            begin <- StreamData.positive_integer()
+          ) do
       message = WireProtocol.piece(idx, begin, bin)
       encoded = WireProtocol.encode(message)
       <<first::binary-size(1024), snd::binary>> = encoded

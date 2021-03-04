@@ -95,7 +95,7 @@ defmodule Torrentex.Torrent.Pieces do
       |> Enum.map(fn {id, _} -> id end)
 
     Logger.info(
-      "Process #{inspect pid}, which was downloading piece #{active_downloads} is down, setting pieces as available"
+      "Process #{inspect(pid)}, which was downloading piece #{active_downloads} is down, setting pieces as available"
     )
 
     {:noreply,

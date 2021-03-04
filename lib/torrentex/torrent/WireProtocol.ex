@@ -72,6 +72,7 @@ defmodule Torrentex.Torrent.WireProtocol do
 
   defp parseMulti(binary, acc) do
     {rest, msg} = parse(binary)
+
     if msg != nil do
       acc = [msg | acc]
       if byte_size(rest) > 0, do: parseMulti(rest, acc), else: {acc, <<>>}
