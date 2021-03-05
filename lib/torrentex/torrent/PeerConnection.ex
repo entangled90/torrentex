@@ -53,7 +53,7 @@ defmodule Torrentex.Torrent.PeerConnection do
     files_writer = Keyword.fetch!(args, :files_writer)
     max_downloading = Keyword.get(args, :max_downloading, 5)
     hashes = Keyword.fetch!(args, :hashes)
-    Process.send_after(self(), :keep_alive, 30_000)
+    Process.send_after(self(), :send_keep_alive, 30_000)
     Logger.metadata(peer: Peer.show(peer))
 
     Logger.info("Starting connection for peer #{Peer.show(peer)}")
@@ -80,6 +80,10 @@ defmodule Torrentex.Torrent.PeerConnection do
   def handle_info({:tcp_closed, _pid}, state) do
     Logger.warn("tcp socket closed. Stopping")
     # TODO  restart instead of stop
+    {:stop, :normal, state}
+  end
+
+  def handle_info({:tcp_error, _port, :etimedout}, state) do
     {:stop, :normal, state}
   end
 
@@ -133,11 +137,12 @@ defmodule Torrentex.Torrent.PeerConnection do
   end
 
   @impl true
-  def handle_info(:keep_alive, state) do
+  def handle_info(:send_keep_alive, state) do
     if state.socket do
       send_msg(state.socket, WireProtocol.keep_alive())
-      Process.send_after(self(), :keep_alive, 10_000)
+      Process.send_after(self(), :send_keep_alive, 10_000)
     end
+    {:noreply, state}
   end
 
   defp connect(%State{peer: %Peer{ip: ip, port: port}} = state) do
@@ -197,9 +202,8 @@ defmodule Torrentex.Torrent.PeerConnection do
     {:ok, piece} = state.downloading[idx] |> Piece.add_sub_piece(begin, block)
 
     if piece.complete do
-      Logger.info("Piece #{idx} is completed.")
+      Logger.debug("Piece #{idx} is completed.")
       piece_hash = Map.get(state.hashes, idx)
-      Logger.info("expected hash is #{inspect(piece_hash)}")
 
       downloading =
         case piece |> Piece.binary(piece_hash) do
@@ -228,7 +232,7 @@ defmodule Torrentex.Torrent.PeerConnection do
     end
   end
 
-  def handle_msg({:keep_alive, nil}, _from, state) do
+  defp handle_msg({:keep_alive, nil}, state) do
     state
   end
 end

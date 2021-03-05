@@ -10,7 +10,7 @@ defmodule Torrentex.Torrent.ChunkTest do
             binary <- StreamData.binary(length: size * 8),
             chunk_len <- StreamData.integer(1..size)
           ) do
-      chunked = Torrent.State.binary_in_chunks(binary, chunk_len)
+      chunked = Torrent.binary_in_chunks(binary, chunk_len)
       assert length(chunked) >= div(size, chunk_len)
       Enum.each(chunked, fn chunk -> assert byte_size(chunk) <= chunk_len end)
     end
@@ -19,7 +19,7 @@ defmodule Torrentex.Torrent.ChunkTest do
   test "binary_in_chunks - specific input" do
     binary = <<0::16>>
     chunk_len = 1
-    chunked = Torrent.State.binary_in_chunks(binary, chunk_len)
+    chunked = Torrent.binary_in_chunks(binary, chunk_len)
     assert chunked == [<<0::8>>, <<0::8>>]
   end
 end

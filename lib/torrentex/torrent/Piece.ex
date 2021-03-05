@@ -7,16 +7,19 @@ defmodule Torrentex.Torrent.Piece do
           sub_pieces: %{integer() => binary()},
           complete: boolean()
         }
-  defstruct [:num, :piece_length, sub_pieces: Map.new(), complete: false]
 
+  @enforce_keys [:num, :piece_length, :full_sub_piece_len]
+  defstruct [:num, :piece_length, :full_sub_piece_len, sub_pieces: Map.new(), complete: false]
+
+  @spec new(pos_integer(), pos_integer()) :: Torrentex.Torrent.Piece.t()
   def new(num, piece_length) do
-    %__MODULE__{num: num, piece_length: piece_length}
+    %__MODULE__{num: num, piece_length: piece_length, full_sub_piece_len: (piece_length / num) |> ceil()}
   end
 
   @spec add_sub_piece(t(), integer(), binary()) :: {:ok, t()} | {:error, {:wrong_size}}
-  def add_sub_piece(piece, begin, sub_piece) when is_binary(sub_piece) do
-    if begin + byte_size(sub_piece) == piece.piece_length - 1 or
-         byte_size(sub_piece) == div(piece.piece_length, piece.num) do
+  def add_sub_piece(%__MODULE__{} = piece, begin, sub_piece) when is_binary(sub_piece) do
+    if begin + byte_size(sub_piece) == piece.piece_length  or
+         byte_size(sub_piece) == piece.full_sub_piece_len do
       sub_pieces = Map.put(piece.sub_pieces, begin, sub_piece)
 
       {:ok,

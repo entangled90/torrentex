@@ -18,12 +18,8 @@ defmodule Torrentex.Application do
     opts = [strategy: :one_for_one, name: Torrentex.Supervisor]
     {:ok, _pid} = Supervisor.start_link(children, opts)
 
-    # receive do
-    #   msg ->
-    #     Logger.info("Received msg #{inspect(msg)}, stopping")
-    #     Process.exit(self(), :normal)
-    # end
-
-    # :ok
   end
+
+
+
 end

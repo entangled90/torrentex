@@ -18,69 +18,67 @@ defmodule Torrentex.Torrent.Torrent do
   use GenServer
   require Logger
 
-  defmodule State do
-    defmodule DownloadStatus do
-      defstruct downloaded: 0, uploaded: 0, left: 0
+  defmodule DownloadStatus do
+    defstruct downloaded: 0, uploaded: 0, left: 0
 
-      def for_torrent(info) do
-        length =
-          case info do
-            %Bento.Metainfo.SingleFile{length: length} ->
-              length
+    def for_torrent(info) do
+      length =
+        case info do
+          %Bento.Metainfo.SingleFile{length: length} ->
+            length
 
-            %Bento.Metainfo.MultiFile{files: files} ->
-              files |> Enum.map(fn file -> file["length"] end) |> Enum.reduce(&(&1 + &2))
-          end
+          %Bento.Metainfo.MultiFile{files: files} ->
+            files |> Enum.map(fn file -> file["length"] end) |> Enum.reduce(&(&1 + &2))
+        end
 
-        %__MODULE__{left: length}
-      end
+      %__MODULE__{left: length}
     end
+  end
 
-    defstruct [
-      :source,
-      :torrent,
-      :info_hash,
-      :hashes,
-      :peer_id,
-      :tracker_response,
-      :download_status,
-      :peer_supervisor,
-      :pieces_agent,
-      :files_writer
-    ]
+  defstruct [
+    :source,
+    :torrent,
+    :info_hash,
+    :hashes,
+    :peer_id,
+    :tracker_response,
+    :download_status,
+    :peer_supervisor,
+    :pieces_agent,
+    :files_writer
+  ]
 
-    def init(source, torrent, hash, peer_id, peer_supervisor, pieces_agent, files_writer) do
-      status = DownloadStatus.for_torrent(torrent.info)
+  def init(source, torrent, hash, peer_id, peer_supervisor, pieces_agent, files_writer) do
+    status = DownloadStatus.for_torrent(torrent.info)
 
-      hashes =
-        torrent.info.pieces
-        |> binary_in_chunks(20)
-        |> Enum.with_index()
-        |> Enum.map(fn {v, k} -> {k, v} end)
-        |> Map.new()
+    hashes =
+      torrent.info.pieces
+      |> binary_in_chunks(20)
+      |> Enum.with_index()
+      |> Enum.map(fn {v, k} -> {k, v} end)
+      |> Map.new()
 
-      %__MODULE__{
-        source: source,
-        torrent: torrent,
-        info_hash: hash,
-        hashes: hashes,
-        peer_id: peer_id,
-        tracker_response: nil,
-        download_status: status,
-        peer_supervisor: peer_supervisor,
-        pieces_agent: pieces_agent,
-        files_writer: files_writer
-      }
-    end
+    %__MODULE__{
+      source: source,
+      torrent: torrent,
+      info_hash: hash,
+      hashes: hashes,
+      peer_id: peer_id,
+      tracker_response: nil,
+      download_status: status,
+      peer_supervisor: peer_supervisor,
+      pieces_agent: pieces_agent,
+      files_writer: files_writer
+    }
+  end
 
-    @spec binary_in_chunks(binary, pos_integer()) :: [binary]
-    def binary_in_chunks(binary, chunk_len) when is_binary(binary) and is_integer(chunk_len) do
-      if byte_size(binary) > chunk_len do
-        <<chunk::binary-size(chunk_len), rest::binary>> = binary
-        [chunk | binary_in_chunks(rest, chunk_len)]
-      else
-        [binary]
-      end
+  @spec binary_in_chunks(binary, pos_integer()) :: [binary]
+  def binary_in_chunks(binary, chunk_len) when is_binary(binary) and is_integer(chunk_len) do
+    if byte_size(binary) > chunk_len do
+      <<chunk::binary-size(chunk_len), rest::binary>> = binary
+      [chunk | binary_in_chunks(rest, chunk_len)]
+    else
+      [binary]
     end
   end
 
@@ -104,17 +102,21 @@ defmodule Torrentex.Torrent.Torrent do
     %{piece_length: piece_length, short_pieces: short_pieces} =
       FilesWriter.piece_length_info(files_writer)
 
+    downloaded_pieces = FilesWriter.downloaded_pieces(files_writer)
+
     {:ok, pieces_agent} =
       Pieces.start_link(
         num_pieces: num_pieces,
         piece_lengths: short_pieces,
-        default_piece_length: piece_length
+        default_piece_length: piece_length,
+        downloaded_pieces: downloaded_pieces
       )
 
     state =
-      State.init(source, torrent, info_hash, peer_id, peer_supervisor, pieces_agent, files_writer)
+      __MODULE__.init(source, torrent, info_hash, peer_id, peer_supervisor, pieces_agent, files_writer)
 
     send(self(), {:call_tracker, "started"})
+    Process.send_after(self(), :report, 5_000)
     {:ok, state}
   end
 
@@ -130,8 +132,16 @@ defmodule Torrentex.Torrent.Torrent do
   #   {:noreply, state}
   # end
 
+  def handle_info(:report, %__MODULE__{} = state) do
+    pieces = FilesWriter.downloaded_pieces(state.files_writer)
+    size = MapSet.size(pieces)
+    Logger.info "Downloaded pieces: #{size}/#{map_size(state.hashes)} = #{size / map_size(state.hashes)}"
+    Process.send_after(self(), :report, 5_000)
+    {:noreply, state}
+  end
+
   @impl true
-  def handle_info({:call_tracker, event} = evt, %State{} = state) do
+  def handle_info({:call_tracker, event} = evt, %__MODULE__{} = state) do
     updated_state =
       case Tracker.call_tracker(
              state.torrent.announce,
@@ -169,7 +179,7 @@ defmodule Torrentex.Torrent.Torrent do
     {:noreply, updated_state}
   end
 
-  defp start_peer_connection(%Peer{} = peer, %State{} = state) do
+  defp start_peer_connection(%Peer{} = peer, %__MODULE__{} = state) do
     args = [
       peer: peer,
       peer_id: state.peer_id,

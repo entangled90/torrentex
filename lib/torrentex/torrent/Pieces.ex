@@ -27,13 +27,18 @@ defmodule Torrentex.Torrent.Pieces do
     num_pieces = Keyword.fetch!(args, :num_pieces)
     piece_lengths = Keyword.fetch!(args, :piece_lengths)
     default_piece_length = Keyword.fetch!(args, :default_piece_length)
+    downloaded_pieces = Keyword.fetch!(args, :downloaded_pieces)
+    all_pieces = MapSet.new(0..(num_pieces - 1))
 
-    {:ok,
-     %__MODULE__{
-       available: MapSet.new(0..(num_pieces - 1)),
-       piece_lengths: piece_lengths,
-       default_piece_length: default_piece_length
-     }}
+    Logger.info "Short pieces are #{inspect piece_lengths}"
+    state = %__MODULE__{
+      available: MapSet.difference(all_pieces, downloaded_pieces),
+      piece_lengths: piece_lengths,
+      default_piece_length: default_piece_length,
+      downloaded: downloaded_pieces
+    }
+
+    {:ok, state}
   end
 
   @spec start_downloading(atom | pid | {atom, any} | {:via, atom, any}, MapSet.t(integer), [
@@ -93,7 +98,7 @@ defmodule Torrentex.Torrent.Pieces do
   def handle_call({:wrong_hash, id}, {_from, _}, %__MODULE__{} = state) do
     downloading = Map.delete(state.downloading, id)
     available = MapSet.put(state.available, id)
-    state = %{state | downloading: downloading, available: available}
+    state = %{state  | downloading: downloading, available: available}
     {:reply, :ok, state}
   end
 
