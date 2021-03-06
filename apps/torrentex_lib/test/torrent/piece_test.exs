@@ -35,7 +35,7 @@ defmodule TorrentexLib.Torrent.PieceTest do
   end
 
   test "short piece is completed correctly" do
-    piece = Piece.new(17, 130) |> IO.inspect() # 16 pieces by 8, plus 1 by 4
+    piece = Piece.new(17, 130)  # 16 pieces by 8, plus 1 by 4
     piece = for id <- 0..15, reduce: piece do
       piece ->
         {:ok, piece} = Piece.add_sub_piece(piece, id * 8, <<0 :: 64>>)

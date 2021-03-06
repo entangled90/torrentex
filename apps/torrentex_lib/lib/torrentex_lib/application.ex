@@ -10,12 +10,12 @@ defmodule TorrentexLib.Application do
   def start(_type, _args) do
     children = [
       # Starts a worker by calling: TorrentexLib.Worker.start_link(arg)
-      # {TorrentexLib.Torrent.Torrent, "../../data/ubuntu-20.04.2.0-desktop-amd64.iso.torrent"}
+      {TorrentexLib.TorrentSupervisor, [name: TorrentexLib.TorrentSupervisor]}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
-    opts = [strategy: :one_for_one, name: TorrentexLib.Supervisor]
+    opts = [strategy: :one_for_one, name: TorrentexLib.AppSupervisor]
     {:ok, _pid} = Supervisor.start_link(children, opts)
 
   end

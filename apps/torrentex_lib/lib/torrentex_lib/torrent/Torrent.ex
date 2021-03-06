@@ -107,7 +107,7 @@ defmodule TorrentexLib.Torrent.Torrent do
 
   @impl true
   def init(source) do
-    {torrent, info_hash} = Parser.decode_torrent(source)
+    {torrent, _file_content, info_hash} = Parser.decode_torrent(source)
 
     Logger.info("Starting torrent for state #{inspect(torrent)}")
 

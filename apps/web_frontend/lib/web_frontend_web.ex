@@ -24,6 +24,7 @@ defmodule WebFrontendWeb do
       import Plug.Conn
       import WebFrontendWeb.Gettext
       alias WebFrontendWeb.Router.Helpers, as: Routes
+      import Phoenix.LiveView.Controller
     end
   end
 
@@ -39,6 +40,24 @@ defmodule WebFrontendWeb do
 
       # Include shared imports and aliases for views
       unquote(view_helpers())
+
+    end
+  end
+
+  def live_view do
+    quote do
+      use Phoenix.LiveView,
+        layout: {<%= web_namespace %>.LayoutView, "live.html"}
+
+      unquote(view_helpers())
+    end
+  end
+
+  def live_component do
+    quote do
+      use Phoenix.LiveComponent
+
+      unquote(view_helpers())
     end
   end
 
@@ -48,6 +67,7 @@ defmodule WebFrontendWeb do
 
       import Plug.Conn
       import Phoenix.Controller
+      import Phoenix.LiveView.Router
     end
   end
 
@@ -65,6 +85,9 @@ defmodule WebFrontendWeb do
 
       # Import basic rendering functionality (render, render_layout, etc)
       import Phoenix.View
+
+       # Import LiveView helpers (live_render, live_component, live_patch, etc)
+      import Phoenix.LiveView.Helpers
 
       import WebFrontendWeb.ErrorHelpers
       import WebFrontendWeb.Gettext

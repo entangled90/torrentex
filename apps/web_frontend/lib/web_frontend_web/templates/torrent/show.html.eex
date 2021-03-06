@@ -1,0 +1,23 @@
+<h1>Show Torrent</h1>
+
+<ul>
+
+  <li>
+    <strong>Name:</strong>
+    <%= @torrent.name %>
+  </li>
+
+  <li>
+    <strong>Info Hash:</strong>
+    <%= @torrent.info_hash |> Base.encode16 %>
+  </li>
+
+  <li>
+    <strong>Downloaded:</strong>
+    <%= @torrent.downloaded %>
+  </li>
+
+</ul>
+
+<span><%= link "Edit", to: Routes.torrent_path(@conn, :edit, @torrent) %></span>
+<span><%= link "Back", to: Routes.torrent_path(@conn, :index) %></span>

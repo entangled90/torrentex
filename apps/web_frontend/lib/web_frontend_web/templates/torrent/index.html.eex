@@ -1,0 +1,30 @@
+<h1>Listing Torrents</h1>
+
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Info Hash</th>
+      <th>Downloaded</th>
+
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+<%= for torrent <- @torrents do %>
+    <tr>
+      <td><%= torrent.name %></td>
+      <td><%= torrent.info_hash |> Base.encode16() %></td>
+      <td><%= torrent.downloaded %></td>
+
+      <td>
+        <span><%= link "Show", to: Routes.torrent_path(@conn, :show, torrent) %></span>
+        <span><%= link "Edit", to: Routes.torrent_path(@conn, :edit, torrent) %></span>
+        <span><%= link "Delete", to: Routes.torrent_path(@conn, :delete, torrent), method: :delete, data: [confirm: "Are you sure?"] %></span>
+      </td>
+    </tr>
+<% end %>
+  </tbody>
+</table>
+
+<span><%= link "New Torrent", to: Routes.torrent_path(@conn, :new) %></span>

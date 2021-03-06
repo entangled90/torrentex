@@ -24,7 +24,7 @@ defmodule WebFrontend.MixProject do
   def application do
     [
       mod: {WebFrontend.Application, []},
-      extra_applications: [:logger, :runtime_tools]
+      extra_applications: [:logger, :runtime_tools, :os_mon, :torrentex_lib]
     ]
   end
 
@@ -49,7 +49,8 @@ defmodule WebFrontend.MixProject do
       {:gettext, "~> 0.11"},
       {:jason, "~> 1.0"},
       {:plug_cowboy, "~> 2.0"},
-
+      {:phoenix_live_view, "~> 0.15.4"},
+      {:floki, ">= 0.27.0", only: :test},
       # torrent lib
       {:torrentex_lib, in_umbrella: true}
     ]

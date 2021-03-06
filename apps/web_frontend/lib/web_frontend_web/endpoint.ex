@@ -32,7 +32,7 @@ defmodule WebFrontendWeb.Endpoint do
     socket "/phoenix/live_reload/socket", Phoenix.LiveReloader.Socket
     plug Phoenix.LiveReloader
     plug Phoenix.CodeReloader
-    plug Phoenix.Ecto.CheckRepoStatus, otp_app: :web_frontend
+    # plug Phoenix.Ecto.CheckRepoStatus, otp_app: :web_frontend
   end
 
   plug Phoenix.LiveDashboard.RequestLogger,
