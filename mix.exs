@@ -9,7 +9,11 @@ defmodule Torrentex.MixProject do
       start_permanent: Mix.env() == :prod,
       test_coverage: [tool: ExCoveralls],
       preferred_cli_env: [coveralls: :test],
-      deps: deps()
+      deps: deps(),
+      dialyzer: [
+        plt_add_deps: :apps_direct,
+        flags: [:unmatched_returns, :error_handling, :race_conditions, :no_opaque]
+      ]
     ]
   end
 

@@ -19,6 +19,12 @@ defmodule Torrentex.Torrent.Torrent do
   require Logger
 
   defmodule DownloadStatus do
+
+    @type t() :: %__MODULE__{
+      downloaded: pos_integer(),
+      uploaded: pos_integer(),
+      left: pos_integer()
+    }
     defstruct downloaded: 0, uploaded: 0, left: 0
 
     def for_torrent(info) do
@@ -35,6 +41,18 @@ defmodule Torrentex.Torrent.Torrent do
     end
   end
 
+  @type t() :: %__MODULE__{
+    source: binary(),
+    torrent: Bento.Metainfo.Torrent.t(),
+    info_hash: binary(),
+    hashes: map(),
+    peer_id: binary(),
+    tracker_response: map(),
+    download_status: DownloadStatus.t(),
+    peer_supervisor: pid(),
+    pieces_agent: pid(),
+    files_writer: pid()
+  }
   defstruct [
     :source,
     :torrent,
@@ -82,7 +100,7 @@ defmodule Torrentex.Torrent.Torrent do
     end
   end
 
-  @spec start_link(any) :: :ignore | {:error, any} | {:ok, pid}
+  @spec start_link(binary()) :: :ignore | {:error, any} | {:ok, pid}
   def start_link(source) do
     GenServer.start_link(__MODULE__, source)
   end
@@ -137,7 +155,10 @@ defmodule Torrentex.Torrent.Torrent do
     size = MapSet.size(pieces)
     Logger.info "Downloaded pieces: #{size}/#{map_size(state.hashes)} = #{size / map_size(state.hashes)}"
     Process.send_after(self(), :report, 5_000)
-    {:noreply, state}
+    %{"piece length": piece_len} = state.torrent.info |> Map.from_struct()
+
+    download_status = %DownloadStatus{downloaded: size * piece_len}
+    {:noreply, %{state | download_status: download_status}}
   end
 
   @impl true

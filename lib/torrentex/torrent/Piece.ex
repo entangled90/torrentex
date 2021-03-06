@@ -2,9 +2,9 @@ defmodule Torrentex.Torrent.Piece do
   @enforce_keys [:num, :piece_length]
 
   @type t() :: %__MODULE__{
-          num: integer(),
-          piece_length: integer(),
-          sub_pieces: %{integer() => binary()},
+          num: pos_integer(),
+          piece_length: pos_integer(),
+          sub_pieces: %{pos_integer() => binary()},
           complete: boolean()
         }
 

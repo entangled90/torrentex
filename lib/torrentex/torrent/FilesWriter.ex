@@ -100,7 +100,7 @@ defmodule Torrentex.Torrent.FilesWriter do
         acc ->
           if file_info.starting_idx <= idx && file_info.starting_idx + file_info.num_pieces > idx do
             offset = (idx - file_info.starting_idx) * state.piece_length
-            :file.position(file_info.file_handle, offset)
+            {:ok, _pos} = :file.position(file_info.file_handle, offset)
             :ok = :file.write(file_info.file_handle, bin)
 
             file_info = %{

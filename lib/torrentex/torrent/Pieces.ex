@@ -56,6 +56,10 @@ defmodule Torrentex.Torrent.Pieces do
     GenServer.call(pid, {:wrong_hash, id})
   end
 
+  def download_canceled(pid, id) do
+    GenServer.call(pid, {:download_canceled, id})
+  end
+
   @impl true
   def handle_call({:start_downloading, candidate_ids, opts}, {from, _}, state) do
     max = Keyword.get(opts, :max, 5)
@@ -96,10 +100,17 @@ defmodule Torrentex.Torrent.Pieces do
   end
 
   def handle_call({:wrong_hash, id}, {_from, _}, %__MODULE__{} = state) do
+    {:reply, :ok, reset_piece(state, id)}
+  end
+
+  def handle_call({:download_canceled, id}, {_from, _}, %__MODULE__{} = state) do
+    {:reply, :ok, reset_piece(state, id)}
+  end
+
+  defp reset_piece(%__MODULE__{} = state, id) do
     downloading = Map.delete(state.downloading, id)
     available = MapSet.put(state.available, id)
-    state = %{state  | downloading: downloading, available: available}
-    {:reply, :ok, state}
+    %{state  | downloading: downloading, available: available}
   end
 
   @impl true

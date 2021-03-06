@@ -83,7 +83,8 @@ defmodule Torrentex.Torrent.PeerConnection do
     {:stop, :normal, state}
   end
 
-  def handle_info({:tcp_error, _port, :etimedout}, state) do
+  def handle_info({:tcp_error, _port, reason}, state) do
+    Logger.warn("Tcp error #{inspect(reason)} encountered. Stopping")
     {:stop, :normal, state}
   end
 
@@ -118,12 +119,17 @@ defmodule Torrentex.Torrent.PeerConnection do
           for {id, len} <- ids, into: state.downloading do
             piece_partition = FilesWriter.partition_piece(len)
 
-            for {begin, sub_piece_len} <- piece_partition do
-              send_msg(
-                state.socket,
-                WireProtocol.request(id, begin, sub_piece_len)
-              )
-            end
+            sub_pieces =
+              for {begin, sub_piece_len} <- piece_partition do
+                send_msg(
+                  state.socket,
+                  WireProtocol.request(id, begin, sub_piece_len)
+                )
+
+                {begin, sub_piece_len}
+              end
+
+            Process.send_after(self(), {:timeout, %{id: id, sub_pieces: sub_pieces}}, 60_000)
 
             {id, Piece.new(map_size(piece_partition), len)}
           end
@@ -137,11 +143,29 @@ defmodule Torrentex.Torrent.PeerConnection do
   end
 
   @impl true
-  def handle_info(:send_keep_alive, state) do
-    if state.socket do
-      send_msg(state.socket, WireProtocol.keep_alive())
-      Process.send_after(self(), :send_keep_alive, 10_000)
+  def handle_info(
+        {:timeout, %{id: id, sub_pieces: sub_pieces}},
+        %State{socket: socket, pieces_agent: pieces_agent, downloading: downloading}
+      ) do
+    if Map.has_key?(downloading, id) do
+      Logger.warn "Timeout expired while still downloading piece #{id}"
+      for {begin, len} <- sub_pieces do
+        send_msg(socket, WireProtocol.cancel(id, begin, len))
+      end
+
+      Map.delete(downloading, id)
+      Pieces.download_canceled(pieces_agent, id)
     end
+  end
+
+  @impl true
+  def handle_info(:send_keep_alive, %State{} = state) do
+    _ =
+      if state.socket do
+        send_msg(state.socket, WireProtocol.keep_alive())
+        Process.send_after(self(), :send_keep_alive, 10_000)
+      end
+
     {:noreply, state}
   end
 
