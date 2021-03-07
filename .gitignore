@@ -23,7 +23,7 @@ erl_crash.dump
 torrentex-*.tar
 
 # binary
-torrentext
+torrentex
 
 # Temporary files for e.g. tests
 /tmp

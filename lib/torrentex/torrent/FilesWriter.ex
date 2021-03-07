@@ -186,10 +186,6 @@ defmodule Torrentex.Torrent.FilesWriter do
           |> Enum.zip(pieces_for_file)
           |> Enum.with_index()
           |> Enum.filter(fn {{chunk, hash}, _} -> :crypto.hash(:sha, chunk) == hash end)
-          |> Enum.map(fn {{_, _}, idx} ->
-            if rem(idx, 10) == 0, do: Logger.info("Read piece #{idx}")
-            idx
-          end)
           |> MapSet.new()
 
         {:error, :enoent} ->

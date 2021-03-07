@@ -80,7 +80,6 @@ defmodule Torrentex.Torrent.PeerConnection do
     connect(state)
   end
 
-
   @impl true
   def handle_info(:poll_work, state) do
     Process.send_after(self(), :poll_work, @poll_interval)
@@ -129,7 +128,8 @@ defmodule Torrentex.Torrent.PeerConnection do
         %State{socket: socket, pieces_agent: pieces_agent, downloading: downloading} = state
       ) do
     if Map.has_key?(downloading, id) do
-      Logger.warn "Timeout expired while still downloading piece #{id}"
+      Logger.warn("Timeout expired while still downloading piece #{id}")
+
       for {begin, len} <- sub_pieces do
         send_msg(socket, WireProtocol.cancel(id, begin, len))
       end
@@ -137,7 +137,8 @@ defmodule Torrentex.Torrent.PeerConnection do
       Map.delete(downloading, id)
       Pieces.download_canceled(pieces_agent, id)
     end
-    {:noreply, %{state | downloading: Map.delete(downloading, id) }}
+
+    {:noreply, %{state | downloading: Map.delete(downloading, id)}}
   end
 
   @impl true
@@ -145,7 +146,7 @@ defmodule Torrentex.Torrent.PeerConnection do
     _ =
       if state.socket do
         send_msg(state.socket, WireProtocol.keep_alive())
-        Process.send_after(self(), :send_keep_alive, 10_000)
+        Process.send_after(self(), :send_keep_alive, 30_000)
       end
 
     {:noreply, state}
@@ -205,43 +206,43 @@ defmodule Torrentex.Torrent.PeerConnection do
   defp handle_msg({:piece, {idx, begin, block}}, %State{} = state) do
     Logger.debug("Received piece #{idx}, #{begin}")
 
-    {:ok, piece} = state.downloading[idx] |> Piece.add_sub_piece(begin, block)
+    if Map.has_key?(state.downloading, idx) do
+      {:ok, piece} = state.downloading[idx] |> Piece.add_sub_piece(begin, block)
 
-    if piece.complete do
-      Logger.debug("Piece #{idx} is completed.")
-      piece_hash = Map.get(state.hashes, idx)
+      if piece.complete do
+        Logger.debug("Piece #{idx} is completed.")
+        piece_hash = Map.get(state.hashes, idx)
 
-      downloading =
-        case piece |> Piece.binary(piece_hash) do
-          {:ok, bin} ->
-            FilesWriter.persist(state.files_writer, idx, bin)
-            Pieces.downloaded(state.pieces_agent, idx)
-            Map.delete(state.downloading, idx)
+        downloading =
+          case Piece.binary(piece, piece_hash) do
+            {:ok, bin} ->
+              FilesWriter.persist(state.files_writer, idx, bin)
+              Pieces.downloaded(state.pieces_agent, idx)
+              Map.delete(state.downloading, idx)
 
-          {:error, {:wrong_hash, wrong_bin}} ->
-            bin_size = byte_size(wrong_bin)
-            wrong_hash = :crypto.hash(:sha, wrong_bin)
+            {:error, {:wrong_hash, wrong_hash}} ->
+              Logger.warn(
+                "Wrong hash for piece #{idx}. . Expected hash #{Base.encode16(piece_hash)}, actual hash #{
+                  Base.encode16(wrong_hash)
+                }"
+              )
 
-            Logger.warn(
-              "Wrong hash for piece #{idx}. Piece size #{bin_size}. Expected hash #{
-                Base.encode16(piece_hash)
-              }, actual hash #{Base.encode16(wrong_hash)}"
-            )
+              :ok = Pieces.wrong_hash(state.pieces_agent, idx)
+              state.downloading
+          end
 
-            :ok = Pieces.wrong_hash(state.pieces_agent, idx)
-            state.downloading
-        end
-
-      %{state | downloading: downloading}
+        %{state | downloading: downloading}
+      else
+        %{state | downloading: %{state.downloading | idx => piece}}
+      end
     else
-      %{state | downloading: %{state.downloading | idx => piece}}
+      state
     end
   end
 
   defp handle_msg({:keep_alive, nil}, state) do
     state
   end
-
 
   defp command_loop(state) do
     if !state.choked do
@@ -265,7 +266,11 @@ defmodule Torrentex.Torrent.PeerConnection do
               {begin, sub_piece_len}
             end
 
-          Process.send_after(self(), {:timeout, %{id: id, sub_pieces: sub_pieces}}, @piece_timeout)
+          Process.send_after(
+            self(),
+            {:timeout, %{id: id, sub_pieces: sub_pieces}},
+            @piece_timeout
+          )
 
           {id, Piece.new(map_size(piece_partition), len)}
         end

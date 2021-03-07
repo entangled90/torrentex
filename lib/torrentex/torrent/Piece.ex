@@ -43,4 +43,10 @@ defmodule Torrentex.Torrent.Piece do
   end
 
   def binary(_, _), do: {:error, :incomplete}
+
+
+  @spec reset(t()) :: t()
+  def reset(%__MODULE__{} = piece) do
+    %{piece | sub_pieces: Map.new(), complete: false}
+  end
 end

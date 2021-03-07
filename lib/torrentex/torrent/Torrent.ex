@@ -91,6 +91,13 @@ defmodule Torrentex.Torrent.Torrent do
     }
   end
 
+
+
+  @spec start_link(list) :: :ignore | {:error, any} | {:ok, pid}
+  def start_link(args) do
+    GenServer.start_link(__MODULE__, args)
+  end
+
   @spec binary_in_chunks(binary, pos_integer()) :: [binary]
   def binary_in_chunks(binary, chunk_len) when is_binary(binary) and is_integer(chunk_len) do
     if byte_size(binary) > chunk_len do
@@ -101,13 +108,11 @@ defmodule Torrentex.Torrent.Torrent do
     end
   end
 
-  @spec start_link(binary()) :: :ignore | {:error, any} | {:ok, pid}
-  def start_link(source) do
-    GenServer.start_link(__MODULE__, source)
-  end
 
   @impl true
-  def init(source) do
+  @spec init(list()) :: {:ok, t()}
+  def init(args) do
+    source = Keyword.fetch!(args, :source)
     {torrent, info_hash} = Parser.decode_torrent(source)
 
     Logger.info("Starting torrent for state #{inspect(torrent)}")
@@ -143,9 +148,14 @@ defmodule Torrentex.Torrent.Torrent do
     {:ok, state}
   end
 
+  def stop(pid) do
+    GenServer.call(pid, :stop)
+  end
+
+
   @impl true
-  def handle_call(:torrent, _from, state) do
-    {:reply, state[:torrent], state}
+  def handle_call(:stop, _from, state) do
+    {:stop, :shutdown, :ok, state}
   end
 
   # # workers in case they die.
