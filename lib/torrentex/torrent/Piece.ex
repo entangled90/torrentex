@@ -4,7 +4,7 @@ defmodule Torrentex.Torrent.Piece do
   @type t() :: %__MODULE__{
           num: pos_integer(),
           piece_length: pos_integer(),
-          sub_pieces: %{pos_integer() => binary()},
+          sub_pieces: %{non_neg_integer() => binary()},
           complete: boolean()
         }
 
@@ -13,12 +13,16 @@ defmodule Torrentex.Torrent.Piece do
 
   @spec new(pos_integer(), pos_integer()) :: Torrentex.Torrent.Piece.t()
   def new(num, piece_length) do
-    %__MODULE__{num: num, piece_length: piece_length, full_sub_piece_len: (piece_length / num) |> ceil()}
+    %__MODULE__{
+      num: num,
+      piece_length: piece_length,
+      full_sub_piece_len: (piece_length / num) |> ceil()
+    }
   end
 
   @spec add_sub_piece(t(), integer(), binary()) :: {:ok, t()} | {:error, {:wrong_size}}
   def add_sub_piece(%__MODULE__{} = piece, begin, sub_piece) when is_binary(sub_piece) do
-    if begin + byte_size(sub_piece) == piece.piece_length  or
+    if begin + byte_size(sub_piece) == piece.piece_length or
          byte_size(sub_piece) == piece.full_sub_piece_len do
       sub_pieces = Map.put(piece.sub_pieces, begin, sub_piece)
 
@@ -43,4 +47,23 @@ defmodule Torrentex.Torrent.Piece do
   end
 
   def binary(_, _), do: {:error, :incomplete}
+
+  @spec validate_hash(t(), binary()) :: :ok | {:error, :incomplete | {:wrong_hash, binary()}}
+  def validate_hash(%__MODULE__{} = piece, expected_hash) when piece.complete do
+    computed_hash =
+      piece
+      |> indices
+      |> Enum.reduce(:crypto.hash_init(:sha), fn idx, state ->
+        :crypto.hash_update(state, piece.sub_pieces[idx])
+      end)
+      |> :crypto.hash_final()
+
+    if computed_hash == expected_hash, do: :ok, else: {:error, {:wrong_hash, computed_hash}}
+  end
+
+  def validate_hash(_, _), do: {:error, :incomplete}
+
+  @spec indices(Torrentex.Torrent.Piece.t()) :: list(non_neg_integer())
+  def indices(%__MODULE__{} = piece),
+    do: 0..(piece.num - 1) |> Enum.map(&(&1 * piece.full_sub_piece_len))
 end

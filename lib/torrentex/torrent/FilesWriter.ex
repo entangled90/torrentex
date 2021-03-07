@@ -1,7 +1,7 @@
 defmodule Torrentex.Torrent.FilesWriter do
   use GenServer
   require Logger
-  alias Torrentex.Torrent.Torrent
+  alias Torrentex.Torrent.{Torrent, Piece}
 
   # 16 KB
   @sub_piece_length :math.pow(2, 14) |> round()
@@ -73,9 +73,9 @@ defmodule Torrentex.Torrent.FilesWriter do
     GenServer.call(pid, :piece_length_infos, 60_000)
   end
 
-  @spec persist(atom | pid | {atom, any} | {:via, atom, any}, pos_integer(), binary()) :: :ok
-  def persist(pid, idx, bin) do
-    GenServer.call(pid, {:persist, idx, bin})
+  @spec persist(atom | pid | {atom, any} | {:via, atom, any}, pos_integer(), t()) :: :ok
+  def persist(pid, idx, piece) do
+    GenServer.call(pid, {:persist, idx, piece})
   end
 
   def downloaded_pieces(pid) do
@@ -92,7 +92,7 @@ defmodule Torrentex.Torrent.FilesWriter do
   end
 
   @impl true
-  def handle_call({:persist, idx, bin}, _from, %__MODULE__{} = state) do
+  def handle_call({:persist, idx, %Piece{} = piece}, _from, %__MODULE__{} = state) do
     Logger.debug("Persisting piece #{idx}")
 
     files =
@@ -101,7 +101,11 @@ defmodule Torrentex.Torrent.FilesWriter do
           if file_info.starting_idx <= idx && file_info.starting_idx + file_info.num_pieces > idx do
             offset = (idx - file_info.starting_idx) * state.piece_length
             {:ok, _pos} = :file.position(file_info.file_handle, offset)
-            :ok = :file.write(file_info.file_handle, bin)
+            piece
+            |> Piece.indices()
+            |> Enum.each(fn sub_idx ->
+              :ok = :file.write(file_info.file_handle, piece.sub_pieces[sub_idx])
+            end)
 
             file_info = %{
               file_info

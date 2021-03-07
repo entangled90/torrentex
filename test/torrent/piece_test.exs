@@ -45,8 +45,8 @@ defmodule Torrentex.Torrent.PieceTest do
     assert piece.complete == true
     #1040 = 130 * 8 size in bits
     expected_hash = :crypto.hash(:sha, <<0 :: 1040>>)
-    {:ok, bin} = Piece.binary(piece, expected_hash)
-
+    {:ok, _bin} = Piece.binary(piece, expected_hash)
+    :ok = Piece.validate_hash(piece, expected_hash)
   end
 
   test "binary is created correctly" do
@@ -54,12 +54,13 @@ defmodule Torrentex.Torrent.PieceTest do
       num: 3,
       piece_length: 8,
       full_sub_piece_len: 3,
-      sub_pieces: Map.new(0..2 |> Enum.map(fn id -> {id, <<1::64>>} end)),
+      sub_pieces: Map.new(0..2 |> Enum.map(fn id -> {id * 3, <<1::64>>} end)),
       complete: true
     }
 
     expected_hash = :crypto.hash(:sha, <<1::64, 1::64, 1::64>>)
     {:ok, binary} = Piece.binary(piece, expected_hash)
+    :ok = Piece.validate_hash(piece, expected_hash)
     assert byte_size(binary) == 24
   end
 
