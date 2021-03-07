@@ -10,6 +10,7 @@ defmodule Torrentex.MixProject do
       test_coverage: [tool: ExCoveralls],
       preferred_cli_env: [coveralls: :test],
       deps: deps(),
+      escript: [main_module: Torrentex.Cli],
       dialyzer: [
         plt_add_deps: :apps_direct,
         flags: [:unmatched_returns, :error_handling, :race_conditions, :no_opaque]
@@ -21,7 +22,7 @@ defmodule Torrentex.MixProject do
   def application do
     [
       extra_applications: [:logger, :crypto, :inets, :ssl],
-      mod: {Torrentex.Application, []}
+      # mod: {Torrentex.Application, []}
     ]
   end
 

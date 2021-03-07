@@ -12,7 +12,8 @@ defmodule Torrentex.Torrent.Torrent do
     Peer,
     PeerConnectionSupervisor,
     Pieces,
-    Tracker
+    Tracker,
+    Reporter
   }
 
   use GenServer
@@ -129,12 +130,16 @@ defmodule Torrentex.Torrent.Torrent do
         default_piece_length: piece_length,
         downloaded_pieces: downloaded_pieces
       )
+    {:ok, _reporter} = Reporter.start_link(
+      piece_length: piece_length,
+      files_writer: files_writer,
+      num_pieces: num_pieces
+    )
 
     state =
       __MODULE__.init(source, torrent, info_hash, peer_id, peer_supervisor, pieces_agent, files_writer)
 
     send(self(), {:call_tracker, "started"})
-    Process.send_after(self(), :report, 5_000)
     {:ok, state}
   end
 
@@ -150,16 +155,7 @@ defmodule Torrentex.Torrent.Torrent do
   #   {:noreply, state}
   # end
 
-  def handle_info(:report, %__MODULE__{} = state) do
-    pieces = FilesWriter.downloaded_pieces(state.files_writer)
-    size = MapSet.size(pieces)
-    Logger.info "Downloaded pieces: #{size}/#{map_size(state.hashes)} = #{size / map_size(state.hashes)}"
-    Process.send_after(self(), :report, 5_000)
-    %{"piece length": piece_len} = state.torrent.info |> Map.from_struct()
 
-    download_status = %DownloadStatus{downloaded: size * piece_len}
-    {:noreply, %{state | download_status: download_status}}
-  end
 
   @impl true
   def handle_info({:call_tracker, event} = evt, %__MODULE__{} = state) do

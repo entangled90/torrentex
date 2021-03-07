@@ -7,6 +7,10 @@ defmodule Torrentex.Torrent.PeerConnection do
   use GenServer
   require Logger
 
+  @poll_interval 5_000
+
+  @piece_timeout 60_000
+
   defmodule State do
     @enforce_keys [
       :socket,
@@ -76,6 +80,13 @@ defmodule Torrentex.Torrent.PeerConnection do
     connect(state)
   end
 
+
+  @impl true
+  def handle_info(:poll_work, state) do
+    Process.send_after(self(), :poll_work, @poll_interval)
+    {:noreply, command_loop(state)}
+  end
+
   @impl true
   def handle_info({:tcp_closed, _pid}, state) do
     Logger.warn("tcp socket closed. Stopping")
@@ -107,37 +118,7 @@ defmodule Torrentex.Torrent.PeerConnection do
 
     downloading_pieces = map_size(state.downloading)
 
-    state =
-      if !state.choked && downloading_pieces < state.max_downloading do
-        ids = Pieces.start_downloading(state.pieces_agent, state.have, max: 1)
-
-        if !state.am_interested do
-          send_msg(state.socket, WireProtocol.interested())
-        end
-
-        downloading =
-          for {id, len} <- ids, into: state.downloading do
-            piece_partition = FilesWriter.partition_piece(len)
-
-            sub_pieces =
-              for {begin, sub_piece_len} <- piece_partition do
-                send_msg(
-                  state.socket,
-                  WireProtocol.request(id, begin, sub_piece_len)
-                )
-
-                {begin, sub_piece_len}
-              end
-
-            Process.send_after(self(), {:timeout, %{id: id, sub_pieces: sub_pieces}}, 60_000)
-
-            {id, Piece.new(map_size(piece_partition), len)}
-          end
-
-        %{state | downloading: downloading}
-      else
-        state
-      end
+    state = if downloading_pieces < state.max_downloading, do: command_loop(state), else: state
 
     {:noreply, state}
   end
@@ -145,7 +126,7 @@ defmodule Torrentex.Torrent.PeerConnection do
   @impl true
   def handle_info(
         {:timeout, %{id: id, sub_pieces: sub_pieces}},
-        %State{socket: socket, pieces_agent: pieces_agent, downloading: downloading}
+        %State{socket: socket, pieces_agent: pieces_agent, downloading: downloading} = state
       ) do
     if Map.has_key?(downloading, id) do
       Logger.warn "Timeout expired while still downloading piece #{id}"
@@ -156,6 +137,7 @@ defmodule Torrentex.Torrent.PeerConnection do
       Map.delete(downloading, id)
       Pieces.download_canceled(pieces_agent, id)
     end
+    {:noreply, %{state | downloading: Map.delete(downloading, id) }}
   end
 
   @impl true
@@ -258,5 +240,39 @@ defmodule Torrentex.Torrent.PeerConnection do
 
   defp handle_msg({:keep_alive, nil}, state) do
     state
+  end
+
+
+  defp command_loop(state) do
+    if !state.choked do
+      ids = Pieces.start_downloading(state.pieces_agent, state.have, max: 1)
+
+      if !state.am_interested do
+        send_msg(state.socket, WireProtocol.interested())
+      end
+
+      downloading =
+        for {id, len} <- ids, into: state.downloading do
+          piece_partition = FilesWriter.partition_piece(len)
+
+          sub_pieces =
+            for {begin, sub_piece_len} <- piece_partition do
+              send_msg(
+                state.socket,
+                WireProtocol.request(id, begin, sub_piece_len)
+              )
+
+              {begin, sub_piece_len}
+            end
+
+          Process.send_after(self(), {:timeout, %{id: id, sub_pieces: sub_pieces}}, @piece_timeout)
+
+          {id, Piece.new(map_size(piece_partition), len)}
+        end
+
+      %{state | downloading: downloading}
+    else
+      state
+    end
   end
 end
