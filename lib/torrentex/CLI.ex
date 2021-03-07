@@ -5,7 +5,7 @@ defmodule Torrentex.Cli do
     IO.inspect opts #here I just inspect the options to stdout
     file = Keyword.fetch!(opts, :file)
     Process.flag(:trap_exit, true)
-    {:ok, pid} = Torrentex.Torrent.Torrent.start_link(file)
+    {:ok, _pid} = Torrentex.Torrent.Torrent.start_link(file)
     receive do
       msg -> IO.inspect msg
     end
