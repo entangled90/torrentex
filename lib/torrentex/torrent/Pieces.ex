@@ -1,4 +1,5 @@
 defmodule Torrentex.Torrent.Pieces do
+  alias Torrentex.Torrent.FilesWriter
   use GenServer
   require Logger
 
@@ -27,7 +28,10 @@ defmodule Torrentex.Torrent.Pieces do
     num_pieces = Keyword.fetch!(args, :num_pieces)
     piece_lengths = Keyword.fetch!(args, :piece_lengths)
     default_piece_length = Keyword.fetch!(args, :default_piece_length)
-    downloaded_pieces = Keyword.fetch!(args, :downloaded_pieces)
+    files_writer = Keyword.fetch!(args, :files_writer)
+
+    downloaded_pieces = FilesWriter.downloaded_pieces(files_writer)
+
     all_pieces = MapSet.new(0..(num_pieces - 1))
 
     Logger.info("Short pieces are #{inspect(piece_lengths)}")
@@ -38,6 +42,8 @@ defmodule Torrentex.Torrent.Pieces do
       default_piece_length: default_piece_length,
       downloaded: downloaded_pieces
     }
+
+    Logger.info "Pieces starting. available: #{MapSet.size(state.available)}, downloaded: #{MapSet.size(state.downloaded)}"
 
     {:ok, state}
   end

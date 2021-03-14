@@ -2,8 +2,8 @@ defmodule Torrentex.Torrent.Torrent do
   @moduledoc """
   Start downloading a torrent given a path to a torrent file or a magnet link
 
-  {:ok, pid} = Torrentex.Torrent.Torrent.start_link("data/ubuntu-20.04.2.0-desktop-amd64.iso.torrent")
-  {:ok, pid} = Torrentex.Torrent.Torrent.start_link("data/Fedora-KDE-Live-x86_64-33.torrent")
+  {:ok, pid} = Torrentex.Torrent.Torrent.start_link(source: "data/ubuntu-20.04.2.0-desktop-amd64.iso.torrent")
+  {:ok, pid} = Torrentex.Torrent.Torrent.start_link(source: "data/Fedora-KDE-Live-x86_64-33.torrent")
 
   """
   alias Torrentex.Torrent.{
@@ -121,14 +121,12 @@ defmodule Torrentex.Torrent.Torrent do
     %{piece_length: piece_length, short_pieces: short_pieces} =
       FilesWriter.piece_length_info(files_writer)
 
-    downloaded_pieces = FilesWriter.downloaded_pieces(files_writer)
-
     {:ok, pieces_agent} =
       Pieces.start_link(
         num_pieces: num_pieces,
         piece_lengths: short_pieces,
         default_piece_length: piece_length,
-        downloaded_pieces: downloaded_pieces
+        files_writer: files_writer
       )
 
     {:ok, _reporter} =
