@@ -17,7 +17,7 @@ defmodule Torrentex.Torrent.WireProtocolTest do
         events
         |> Enum.map(&WireProtocol.encode(&1))
         |> Enum.reduce(&(&1 <> &2))
-        |> WireProtocol.parseMulti()
+        |> WireProtocol.parse_multi()
 
       assert events == msgs
     end
@@ -29,7 +29,7 @@ defmodule Torrentex.Torrent.WireProtocolTest do
         events
         |> Enum.map(&WireProtocol.encode(&1))
         |> Enum.reduce(&(&1 <> &2))
-        |> WireProtocol.parseMulti()
+        |> WireProtocol.parse_multi()
 
       assert events == msgs
     end
@@ -55,8 +55,8 @@ defmodule Torrentex.Torrent.WireProtocolTest do
       message = WireProtocol.piece(idx, begin, bin)
       encoded = WireProtocol.encode(message)
       <<first::binary-size(1024), snd::binary>> = encoded
-      {[], first} = WireProtocol.parseMulti(first)
-      {[decoded], <<>>} = WireProtocol.parseMulti(first <> snd)
+      {[], first} = WireProtocol.parse_multi(first)
+      {[decoded], <<>>} = WireProtocol.parse_multi(first <> snd)
       assert message == decoded
     end
   end
@@ -87,7 +87,7 @@ defmodule Torrentex.Torrent.WireProtocolTest do
       positive_generator |> StreamData.map(&WireProtocol.have(&1)),
       tuple_three |> StreamData.map(&{:request, &1}),
       tuple_three |> StreamData.map(&{:cancel, &1}),
-      StreamData.integer(0..65535) |> StreamData.map(&WireProtocol.port(&1)),
+      StreamData.integer(0..65_535) |> StreamData.map(&WireProtocol.port(&1)),
       piece_generator,
       bitfield_gen(),
       StreamData.tuple({peer_id_generator, peer_id_generator})

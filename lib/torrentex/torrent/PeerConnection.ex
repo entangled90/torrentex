@@ -105,7 +105,7 @@ defmodule Torrentex.Torrent.PeerConnection do
       raise "Invalid socket sent the message!"
     end
 
-    {msgs, remaining} = WireProtocol.parseMulti(state.partial_packets <> binary)
+    {msgs, remaining} = WireProtocol.parse_multi(state.partial_packets <> binary)
     state = %{state | partial_packets: remaining}
 
     state =
@@ -134,7 +134,6 @@ defmodule Torrentex.Torrent.PeerConnection do
         send_msg(socket, WireProtocol.cancel(id, begin, len))
       end
 
-      Map.delete(downloading, id)
       Pieces.download_canceled(pieces_agent, id)
     end
 

@@ -20,12 +20,11 @@ defmodule Torrentex.Torrent.Torrent do
   require Logger
 
   defmodule DownloadStatus do
-
     @type t() :: %__MODULE__{
-      downloaded: pos_integer(),
-      uploaded: pos_integer(),
-      left: pos_integer()
-    }
+            downloaded: pos_integer(),
+            uploaded: pos_integer(),
+            left: pos_integer()
+          }
     defstruct downloaded: 0, uploaded: 0, left: 0
 
     def for_torrent(info) do
@@ -43,17 +42,17 @@ defmodule Torrentex.Torrent.Torrent do
   end
 
   @type t() :: %__MODULE__{
-    source: binary(),
-    torrent: Bento.Metainfo.Torrent.t(),
-    info_hash: binary(),
-    hashes: map(),
-    peer_id: binary(),
-    tracker_response: map(),
-    download_status: DownloadStatus.t(),
-    peer_supervisor: pid(),
-    pieces_agent: pid(),
-    files_writer: pid()
-  }
+          source: binary(),
+          torrent: Bento.Metainfo.Torrent.t(),
+          info_hash: binary(),
+          hashes: map(),
+          peer_id: binary(),
+          tracker_response: map(),
+          download_status: DownloadStatus.t(),
+          peer_supervisor: pid(),
+          pieces_agent: pid(),
+          files_writer: pid()
+        }
   defstruct [
     :source,
     :torrent,
@@ -91,8 +90,6 @@ defmodule Torrentex.Torrent.Torrent do
     }
   end
 
-
-
   @spec start_link(list) :: :ignore | {:error, any} | {:ok, pid}
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
@@ -108,9 +105,7 @@ defmodule Torrentex.Torrent.Torrent do
     end
   end
 
-
   @impl true
-  @spec init(list()) :: {:ok, t()}
   def init(args) do
     source = Keyword.fetch!(args, :source)
     {torrent, info_hash} = Parser.decode_torrent(source)
@@ -135,14 +130,24 @@ defmodule Torrentex.Torrent.Torrent do
         default_piece_length: piece_length,
         downloaded_pieces: downloaded_pieces
       )
-    {:ok, _reporter} = Reporter.start_link(
-      piece_length: piece_length,
-      files_writer: files_writer,
-      num_pieces: num_pieces
-    )
+
+    {:ok, _reporter} =
+      Reporter.start_link(
+        piece_length: piece_length,
+        files_writer: files_writer,
+        num_pieces: num_pieces
+      )
 
     state =
-      __MODULE__.init(source, torrent, info_hash, peer_id, peer_supervisor, pieces_agent, files_writer)
+      __MODULE__.init(
+        source,
+        torrent,
+        info_hash,
+        peer_id,
+        peer_supervisor,
+        pieces_agent,
+        files_writer
+      )
 
     send(self(), {:call_tracker, "started"})
     {:ok, state}
@@ -151,7 +156,6 @@ defmodule Torrentex.Torrent.Torrent do
   def stop(pid) do
     GenServer.call(pid, :stop)
   end
-
 
   @impl true
   def handle_call(:stop, _from, state) do
@@ -164,8 +168,6 @@ defmodule Torrentex.Torrent.Torrent do
   #   Logger.info("Process #{inspect(from)} exited with reason #{inspect(reason)}")
   #   {:noreply, state}
   # end
-
-
 
   @impl true
   def handle_info({:call_tracker, event} = evt, %__MODULE__{} = state) do

@@ -30,7 +30,8 @@ defmodule Torrentex.Torrent.Pieces do
     downloaded_pieces = Keyword.fetch!(args, :downloaded_pieces)
     all_pieces = MapSet.new(0..(num_pieces - 1))
 
-    Logger.info "Short pieces are #{inspect piece_lengths}"
+    Logger.info("Short pieces are #{inspect(piece_lengths)}")
+
     state = %__MODULE__{
       available: MapSet.difference(all_pieces, downloaded_pieces),
       piece_lengths: piece_lengths,
@@ -110,7 +111,7 @@ defmodule Torrentex.Torrent.Pieces do
   defp reset_piece(%__MODULE__{} = state, id) do
     downloading = Map.delete(state.downloading, id)
     available = MapSet.put(state.available, id)
-    %{state  | downloading: downloading, available: available}
+    %{state | downloading: downloading, available: available}
   end
 
   @impl true
