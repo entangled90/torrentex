@@ -35,7 +35,7 @@ defmodule Torrentex.Torrent.Pieces do
     all_pieces = MapSet.new(0..(num_pieces - 1))
 
     Logger.info("Short pieces are #{inspect(piece_lengths)}")
-
+    Logger.info "Downloaded pieces are #{inspect downloaded_pieces}"
     state = %__MODULE__{
       available: MapSet.difference(all_pieces, downloaded_pieces),
       piece_lengths: piece_lengths,
@@ -67,6 +67,10 @@ defmodule Torrentex.Torrent.Pieces do
     GenServer.call(pid, {:download_canceled, id})
   end
 
+  def query_available(pid) do
+    GenServer.call(pid, :query_available)
+  end
+
   @impl true
   def handle_call({:start_downloading, candidate_ids, opts}, {from, _}, state) do
     max = Keyword.get(opts, :max, 5)
@@ -76,15 +80,13 @@ defmodule Torrentex.Torrent.Pieces do
     downloading =
       Map.merge(
         state.downloading,
-        valid |> MapSet.to_list() |> Enum.map(&{&1, from}) |> Map.new()
+        valid |> MapSet.to_list() |> Enum.map(&{&1, {from, Process.monitor(from)}}) |> Map.new()
       )
 
     result =
       for id <- valid, into: %{} do
         {id, Map.get(state.piece_lengths, id, state.default_piece_length)}
       end
-
-    Process.monitor(from)
 
     {:reply, result,
      %{
@@ -94,15 +96,19 @@ defmodule Torrentex.Torrent.Pieces do
      }}
   end
 
-  def handle_call({:downloaded, id}, {from_pid, _}, state) do
-    downloaded_from = state.downloading[id]
+  def handle_call(:query_available, _, state) do
+    {:reply, state.available, state}
+  end
 
-    if downloaded_from == from_pid do
-      downloading = Map.delete(state.downloading, id)
-      downloaded = MapSet.put(state.downloaded, id)
-      {:reply, :ok, %{state | downloading: downloading, downloaded: downloaded}}
-    else
-      {:reply, {:error, :not_downloading}, state}
+  def handle_call({:downloaded, id}, {from_pid, _}, state) do
+    case state.downloading[id] do
+      {downloaded_from, monitor_ref} when downloaded_from == from_pid ->
+        Process.demonitor(monitor_ref)
+        downloading = Map.delete(state.downloading, id)
+        downloaded = MapSet.put(state.downloaded, id)
+        {:reply, :ok, %{state | downloading: downloading, downloaded: downloaded}}
+      _ ->
+        {:reply, {:error, :not_downloading}, state}
     end
   end
 
@@ -125,7 +131,7 @@ defmodule Torrentex.Torrent.Pieces do
     active_downloads =
       state.downloading
       |> Enum.to_list()
-      |> Enum.filter(fn {_, p} -> p == pid end)
+      |> Enum.filter(fn {_, {p, _}} -> p == pid end)
       |> Enum.map(fn {id, _} -> id end)
 
     Logger.info(

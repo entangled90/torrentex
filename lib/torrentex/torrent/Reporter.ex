@@ -1,16 +1,17 @@
 defmodule Torrentex.Torrent.Reporter do
   require Logger
-  alias Torrentex.Torrent.{FilesWriter}
+  alias Torrentex.Torrent.{FilesWriter, Pieces}
   use GenServer
 
   @report_interval 5_000
 
-  @enforce_keys [:files_writer, :num_pieces, :piece_length, :pieces_downloaded]
+  @enforce_keys [:files_writer, :num_pieces, :piece_length, :pieces_downloaded, :pieces_agent]
   defstruct [
     :files_writer,
     :num_pieces,
     :piece_length,
     :pieces_downloaded,
+    :pieces_agent,
     active_peers: 0,
     downloading_pieces: 0
   ]
@@ -23,6 +24,7 @@ defmodule Torrentex.Torrent.Reporter do
     files_writer = Keyword.fetch!(args, :files_writer)
     num_pieces = Keyword.fetch!(args, :num_pieces)
     piece_length = Keyword.fetch!(args, :piece_length)
+    pieces_agent = Keyword.fetch!(args, :pieces_agent)
     Process.send_after(self(), :report, @report_interval)
     pieces_downloaded = FilesWriter.downloaded_pieces(files_writer)
 
@@ -31,7 +33,8 @@ defmodule Torrentex.Torrent.Reporter do
        files_writer: files_writer,
        num_pieces: num_pieces,
        piece_length: piece_length,
-       pieces_downloaded: MapSet.size(pieces_downloaded)
+       pieces_downloaded: MapSet.size(pieces_downloaded),
+       pieces_agent: pieces_agent
      }}
   end
 
@@ -45,6 +48,13 @@ defmodule Torrentex.Torrent.Reporter do
     Logger.info(
       "Downloaded pieces: #{size}/#{state.num_pieces} = #{size / state.num_pieces}. Speed #{speed}MB/s"
     )
+    available = Pieces.query_available(state.pieces_agent)
+
+    if MapSet.size(available) < 10 do
+      Logger.info "remaining less than 10 pieces #{inspect available}"
+    else
+      Logger.info "remaining available pieces #{MapSet.size(available)}"
+    end
 
     Process.send_after(self(), :report, @report_interval)
 

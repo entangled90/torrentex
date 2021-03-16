@@ -2,6 +2,7 @@ defmodule Torrentex.Torrent.FilesWriter do
   use GenServer
   require Logger
   alias Torrentex.Torrent.Torrent
+  import Torrentex.Torrent.FileUtils
 
   # 16 KB
   @sub_piece_length :math.pow(2, 14) |> round()
@@ -100,8 +101,10 @@ defmodule Torrentex.Torrent.FilesWriter do
         acc ->
           if file_info.starting_idx <= idx && file_info.starting_idx + file_info.num_pieces > idx do
             offset = (idx - file_info.starting_idx) * state.piece_length
-            {:ok, _pos} = :file.position(file_info.file_handle, offset)
-            :ok = :file.write(file_info.file_handle, bin)
+            if MapSet.member?(file_info.downloaded_pieces, idx) do
+              Logger.warn "Persisting already persisted piece #{idx}"
+            end
+            write_at(file_info.file_handle, offset, bin)
 
             file_info = %{
               file_info
@@ -182,11 +185,7 @@ defmodule Torrentex.Torrent.FilesWriter do
     downloaded_pieces =
       case File.stat(path) do
         {:ok, _} ->
-          File.stream!(path, [], piece_length)
-          |> Enum.zip(pieces_for_file)
-          |> Enum.with_index()
-          |> Enum.filter(fn {{chunk, hash}, _} -> :crypto.hash(:sha, chunk) == hash end)
-          |> MapSet.new()
+          load_downloaded_pieces(path, piece_length, pieces_for_file)
 
         {:error, :enoent} ->
           MapSet.new()

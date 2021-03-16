@@ -133,7 +133,8 @@ defmodule Torrentex.Torrent.Torrent do
       Reporter.start_link(
         piece_length: piece_length,
         files_writer: files_writer,
-        num_pieces: num_pieces
+        num_pieces: num_pieces,
+        pieces_agent: pieces_agent
       )
 
     state =
