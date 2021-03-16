@@ -35,7 +35,8 @@ defmodule Torrentex.Torrent.Pieces do
     all_pieces = MapSet.new(0..(num_pieces - 1))
 
     Logger.info("Short pieces are #{inspect(piece_lengths)}")
-    Logger.info "Downloaded pieces are #{inspect downloaded_pieces}"
+    Logger.info("Downloaded pieces are #{inspect(downloaded_pieces)}")
+
     state = %__MODULE__{
       available: MapSet.difference(all_pieces, downloaded_pieces),
       piece_lengths: piece_lengths,
@@ -43,14 +44,18 @@ defmodule Torrentex.Torrent.Pieces do
       downloaded: downloaded_pieces
     }
 
-    Logger.info "Pieces starting. available: #{MapSet.size(state.available)}, downloaded: #{MapSet.size(state.downloaded)}"
+    Logger.info(
+      "Pieces starting. available: #{MapSet.size(state.available)}, downloaded: #{
+        MapSet.size(state.downloaded)
+      }"
+    )
 
     {:ok, state}
   end
 
   @spec start_downloading(atom | pid | {atom, any} | {:via, atom, any}, MapSet.t(integer), [
           {atom(), any()}
-        ]) :: any
+        ]) :: map() | :downloaded
   def start_downloading(pid, candidate_ids, opts \\ []) do
     GenServer.call(pid, {:start_downloading, candidate_ids, opts})
   end
@@ -74,26 +79,34 @@ defmodule Torrentex.Torrent.Pieces do
   @impl true
   def handle_call({:start_downloading, candidate_ids, opts}, {from, _}, state) do
     max = Keyword.get(opts, :max, 5)
-    valid = MapSet.intersection(state.available, candidate_ids) |> Enum.take(max) |> MapSet.new()
-    available = MapSet.difference(state.available, valid)
 
-    downloading =
-      Map.merge(
-        state.downloading,
-        valid |> MapSet.to_list() |> Enum.map(&{&1, {from, Process.monitor(from)}}) |> Map.new()
-      )
+    if MapSet.size(state.available) > 0 do
+      valid =
+        MapSet.intersection(state.available, candidate_ids) |> Enum.take(max) |> MapSet.new()
 
-    result =
-      for id <- valid, into: %{} do
-        {id, Map.get(state.piece_lengths, id, state.default_piece_length)}
-      end
+      available = MapSet.difference(state.available, valid)
 
-    {:reply, result,
-     %{
-       state
-       | available: available,
-         downloading: downloading
-     }}
+      downloading =
+        Map.merge(
+          state.downloading,
+          valid |> MapSet.to_list() |> Enum.map(&{&1, {from, Process.monitor(from)}}) |> Map.new()
+        )
+
+      result =
+        for id <- valid, into: %{} do
+          {id, Map.get(state.piece_lengths, id, state.default_piece_length)}
+        end
+
+      {:reply, result,
+       %{
+         state
+         | available: available,
+           downloading: downloading
+       }}
+    else
+      response = if map_size(state.downloading) == 0, do: :downloaded, else: %{}
+      {:reply, response, state}
+    end
   end
 
   def handle_call(:query_available, _, state) do
@@ -107,6 +120,7 @@ defmodule Torrentex.Torrent.Pieces do
         downloading = Map.delete(state.downloading, id)
         downloaded = MapSet.put(state.downloaded, id)
         {:reply, :ok, %{state | downloading: downloading, downloaded: downloaded}}
+
       _ ->
         {:reply, {:error, :not_downloading}, state}
     end

@@ -1,4 +1,7 @@
 defmodule Torrentex.Torrent.Parser do
+
+
+  @spec decode_torrent(binary()) :: {Bento.Metainfo.Torrent.t(), binary()}
   def decode_torrent(source) do
     if source |> String.ends_with?(".torrent") do
       file_content = File.read!(source)

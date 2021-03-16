@@ -82,8 +82,18 @@ defmodule Torrentex.Torrent.PeerConnection do
 
   @impl true
   def handle_info(:poll_work, state) do
-    Process.send_after(self(), :poll_work, @poll_interval)
-    {:noreply, command_loop(state)}
+    state =
+      case command_loop(state) do
+        {:downloaded, state} ->
+          Logger.info("Torrent download is completed. stop polling for work")
+          state
+
+        {:continue, state} ->
+          Process.send_after(self(), :poll_work, @poll_interval)
+          state
+      end
+
+    {:noreply, state}
   end
 
   @impl true
@@ -101,8 +111,12 @@ defmodule Torrentex.Torrent.PeerConnection do
   @impl true
   def handle_info({:tcp, socket, binary}, state)
       when is_binary(binary) do
-    if socket != state.socket do
-      raise "Invalid socket sent the message!"
+    if socket == nil do
+      raise "Socket is nil!"
+    else
+      if socket != state.socket do
+        raise "Invalid socket sent the message!"
+      end
     end
 
     {msgs, remaining} = WireProtocol.parse_multi(state.partial_packets <> binary)
@@ -115,9 +129,7 @@ defmodule Torrentex.Torrent.PeerConnection do
         handle_msg(msg, state)
       end)
 
-    downloading_pieces = map_size(state.downloading)
-
-    state = if downloading_pieces < state.max_downloading, do: command_loop(state), else: state
+    {_, state} = command_loop(state)
 
     {:noreply, state}
   end
@@ -203,7 +215,7 @@ defmodule Torrentex.Torrent.PeerConnection do
   end
 
   defp handle_msg({:piece, {idx, begin, block}}, %State{} = state) do
-    Logger.debug "Received piece #{idx}, #{begin}"
+    Logger.debug("Received piece #{idx}, #{begin}")
 
     if Map.has_key?(state.downloading, idx) do
       {:ok, piece} = state.downloading[idx] |> Piece.add_sub_piece(begin, block)
@@ -243,40 +255,45 @@ defmodule Torrentex.Torrent.PeerConnection do
     state
   end
 
+  defp command_loop(state) when state.choked, do: {:continue, state}
+
+  defp command_loop(state) when map_size(state.downloading) >= state.max_downloading,
+    do: {:continue, state}
+
   defp command_loop(state) do
-    if !state.choked do
-      ids = Pieces.start_downloading(state.pieces_agent, state.have, max: 1)
+    case Pieces.start_downloading(state.pieces_agent, state.have, max: 1) do
+      :downloaded ->
+        {:downloaded, state}
 
-      if !state.am_interested do
-        send_msg(state.socket, WireProtocol.interested())
-      end
-
-      downloading =
-        for {id, len} <- ids, into: state.downloading do
-          piece_partition = FilesWriter.partition_piece(len)
-
-          sub_pieces =
-            for {begin, sub_piece_len} <- piece_partition do
-              send_msg(
-                state.socket,
-                WireProtocol.request(id, begin, sub_piece_len)
-              )
-
-              {begin, sub_piece_len}
-            end
-
-          Process.send_after(
-            self(),
-            {:timeout, %{id: id, sub_pieces: sub_pieces}},
-            @piece_timeout
-          )
-
-          {id, Piece.new(map_size(piece_partition), len)}
+      ids ->
+        if !state.am_interested do
+          send_msg(state.socket, WireProtocol.interested())
         end
 
-      %{state | downloading: downloading}
-    else
-      state
+        downloading =
+          for {id, len} <- ids, into: state.downloading do
+            piece_partition = FilesWriter.partition_piece(len)
+
+            sub_pieces =
+              for {begin, sub_piece_len} <- piece_partition do
+                send_msg(
+                  state.socket,
+                  WireProtocol.request(id, begin, sub_piece_len)
+                )
+
+                {begin, sub_piece_len}
+              end
+
+            Process.send_after(
+              self(),
+              {:timeout, %{id: id, sub_pieces: sub_pieces}},
+              @piece_timeout
+            )
+
+            {id, Piece.new(map_size(piece_partition), len)}
+          end
+
+        {:continue, %{state | downloading: downloading}}
     end
   end
 end
