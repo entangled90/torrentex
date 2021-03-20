@@ -72,8 +72,8 @@ defmodule Torrentex.Torrent.Pieces do
     GenServer.call(pid, {:download_canceled, id})
   end
 
-  def query_available(pid) do
-    GenServer.call(pid, :query_available)
+  def query_status(pid) do
+    GenServer.call(pid, :query_status)
   end
 
   @impl true
@@ -109,8 +109,8 @@ defmodule Torrentex.Torrent.Pieces do
     end
   end
 
-  def handle_call(:query_available, _, state) do
-    {:reply, state.available, state}
+  def handle_call(:query_status, _, state) do
+    {:reply, %{available: state.available, downloading: state.downloading}, state}
   end
 
   def handle_call({:downloaded, id}, {from_pid, _}, state) do
@@ -144,8 +144,7 @@ defmodule Torrentex.Torrent.Pieces do
   def handle_info({:DOWN, _, :process, pid, _}, state) do
     active_downloads =
       state.downloading
-      |> Enum.to_list()
-      |> Enum.filter(fn {_, {p, _}} -> p == pid end)
+      |> Stream.filter(fn {_, {p, _}} -> p == pid end)
       |> Enum.map(fn {id, _} -> id end)
 
     Logger.info(

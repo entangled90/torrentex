@@ -7,7 +7,7 @@ defmodule Torrentex.Cli do
     {:ok, _pid} = Torrentex.Torrent.Torrent.start_link(file)
 
     receive do
-      msg -> IO.inspect(msg)
+      msg -> IO.inspect (msg)
     end
   end
 end

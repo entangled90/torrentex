@@ -218,7 +218,7 @@ defmodule Torrentex.Torrent.PeerConnection do
     Logger.debug("Received piece #{idx}, #{begin}")
 
     if Map.has_key?(state.downloading, idx) do
-      {:ok, piece} = state.downloading[idx] |> Piece.add_sub_piece(begin, block)
+      {:ok, piece} = state.downloading[idx] |> IO.inspect(label: "before") |> Piece.add_sub_piece(begin, block) |> IO.inspect(label: "after")
 
       if piece.complete do
         Logger.debug("Piece #{idx} is completed.")
@@ -265,13 +265,14 @@ defmodule Torrentex.Torrent.PeerConnection do
       :downloaded ->
         {:downloaded, state}
 
-      ids ->
+      ids when map_size(ids) > 0 ->
         if !state.am_interested do
           send_msg(state.socket, WireProtocol.interested())
         end
 
         downloading =
           for {id, len} <- ids, into: state.downloading do
+            Logger.debug "piece with id #{id} has len #{len}"
             piece_partition = FilesWriter.partition_piece(len)
 
             sub_pieces =
@@ -293,7 +294,10 @@ defmodule Torrentex.Torrent.PeerConnection do
             {id, Piece.new(map_size(piece_partition), len)}
           end
 
-        {:continue, %{state | downloading: downloading}}
+        {:continue, %{state | downloading: downloading, interested: true}}
+
+        _ ->
+        {:continue, state}
     end
   end
 end

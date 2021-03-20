@@ -1,5 +1,5 @@
 defmodule Torrentex.Torrent.ParserTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   alias Torrentex.Torrent.Parser
 
   test "info hash is correct" do

@@ -1,5 +1,5 @@
 defmodule Torrentex.Torrent.WireProtocolTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   use ExUnitProperties
 
   alias Torrentex.Torrent.WireProtocol

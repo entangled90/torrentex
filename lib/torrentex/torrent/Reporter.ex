@@ -48,10 +48,10 @@ defmodule Torrentex.Torrent.Reporter do
     Logger.info(
       "Downloaded pieces: #{size}/#{state.num_pieces} = #{size / state.num_pieces}. Speed #{speed}MB/s"
     )
-    available = Pieces.query_available(state.pieces_agent)
+    %{available: available, downloading: downloading} = Pieces.query_status(state.pieces_agent)
 
     if MapSet.size(available) < 10 do
-      Logger.info "remaining less than 10 pieces #{inspect available}"
+      Logger.info "remaining less than 10 pieces #{inspect available}. Downloading #{inspect downloading}"
     else
       Logger.info "remaining available pieces #{MapSet.size(available)}"
     end

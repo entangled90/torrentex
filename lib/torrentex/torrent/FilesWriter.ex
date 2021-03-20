@@ -37,7 +37,7 @@ defmodule Torrentex.Torrent.FilesWriter do
         }
   defstruct [:metainfo, :download_folder, :piece_length, :pieces, :files]
 
-  @spec pieces_written(Torrentex.Torrent.FilesWriter.t()) :: MapSet.t(pos_integer())
+  @spec pieces_written(Torrentex.Torrent.FilesWriter.t()) :: MapSet.t(non_neg_integer())
   def pieces_written(%__MODULE__{} = state) do
     for {_path, file} <- state.files, reduce: MapSet.new() do
       acc -> MapSet.union(acc, file.downloaded_pieces)
@@ -45,7 +45,7 @@ defmodule Torrentex.Torrent.FilesWriter do
   end
 
   def start_link(args) do
-    GenServer.start_link(__MODULE__, args)
+    GenServer.start_link(__MODULE__, args, [spawn_opt: [min_heap_size: 1024*1024]])
   end
 
   @impl true
@@ -79,6 +79,7 @@ defmodule Torrentex.Torrent.FilesWriter do
     GenServer.call(pid, {:persist, idx, bin})
   end
 
+  @spec downloaded_pieces(atom | pid | {atom, any} | {:via, atom, any}) :: MapSet.t(non_neg_integer())
   def downloaded_pieces(pid) do
     GenServer.call(pid, :pieces_written, 60_000)
   end
@@ -180,20 +181,22 @@ defmodule Torrentex.Torrent.FilesWriter do
   @spec load_file(binary(), pos_integer(), map()) :: {:file.io_device(), MapSet.t(integer())}
   def load_file(path, piece_length, %{pieces_for_file: pieces_for_file})
       when piece_length > 0 and pieces_for_file > 0 do
-    Logger.info("Loading file #{path} from disk")
+
+    Logger.info("Loading file #{path} from disk.")
 
     downloaded_pieces =
       case File.stat(path) do
         {:ok, _} ->
-          load_downloaded_pieces(path, piece_length, pieces_for_file)
+          load_downloaded_pieces(path , piece_length, pieces_for_file)
 
         {:error, :enoent} ->
+          Logger.info("No file was found.")
           MapSet.new()
       end
 
     Logger.info("Completed pieces #{MapSet.size(downloaded_pieces) / length(pieces_for_file)}")
 
-    {:ok, file} = :file.open(path, [:write, :raw])
+    {:ok, file} = :file.open(path, [:write, :read, :raw])
     {file, downloaded_pieces}
   end
 
@@ -201,13 +204,14 @@ defmodule Torrentex.Torrent.FilesWriter do
   def short_pieces(files, piece_length) do
     {_, map} =
       Enum.reduce(files, {0, %{}}, fn {_, %{length: len}}, {idx, map} ->
-        last_piece = div(len, piece_length)
+        last_piece = div(len, piece_length) |> IO.inspect(label: "last_piece")
 
         if rem(len, piece_length) != 0 do
-          short_piece = idx + last_piece + 1
-          {short_piece, Map.put(map, short_piece, rem(len, piece_length))}
+          # pieces start from 0
+          short_piece = idx + last_piece
+          {short_piece + 1, Map.put(map, short_piece, rem(len, piece_length))}
         else
-          {idx + last_piece, map}
+          {idx + last_piece , map}
         end
       end)
 

@@ -201,7 +201,7 @@ defmodule Torrentex.Torrent.Torrent do
     new_peers
     |> Enum.each(&start_peer_connection(&1, state))
 
-    Logger.debug("Tracker retry after #{response["interval"]}")
+    Logger.info("Tracker retry after #{response["interval"]} seconds")
     Process.send_after(self(), {:call_tracker, nil}, response["interval"] * 1000)
 
     {:noreply, updated_state}

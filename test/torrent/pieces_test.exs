@@ -1,5 +1,5 @@
 defmodule Torrentex.Torrent.PiecesTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   import Mock
   alias Torrentex.Torrent.{Pieces, FilesWriter}
 

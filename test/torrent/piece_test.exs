@@ -1,5 +1,5 @@
 defmodule Torrentex.Torrent.PieceTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   use ExUnitProperties
   alias Torrentex.Torrent.Piece
 
