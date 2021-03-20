@@ -30,6 +30,7 @@ defmodule Torrentex.Torrent.FilesWriterTest do
 
   test "should load downloaded file correctly" do
     # this file was downloaded with transmission, sha256 match with original
+    # if missing download it and place it in the folder.
     {metainfo, _info_hash} = Torrentex.Torrent.Parser.decode_torrent("data/ubuntu-20.04.2.0-desktop-amd64.iso.torrent")
     {:ok, files_writer} = FilesWriter.start_link(metainfo: metainfo.info, download_folder: "data/downloaded")
     written = FilesWriter.downloaded_pieces(files_writer)
