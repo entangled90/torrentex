@@ -61,23 +61,38 @@ defmodule Torrentex.Torrent.WireProtocolTest do
     end
   end
 
+  property "piece split into iolist" do
+    check all (
+      piece <- piece_generator()
+    ) do
+      encoded = WireProtocol.encode(piece)
+      len = byte_size(encoded)
+      first = :binary.bin_to_list(encoded, {0, div(len, 2)})
+      second = :binary.bin_to_list(encoded, {div(len, 2), len - div(len, 2)})
+      {_, ^piece} = WireProtocol.parse([first| second])
+
+    end
+  end
+
   def append_bits(bits, binary), do: <<bits::binary, binary::binary>>
 
   def positive_generator, do: StreamData.integer(0..1024)
 
   def peer_id_generator, do: StreamData.binary(length: 20)
 
-  def event_generator do
-    tuple_three = StreamData.tuple({positive_generator, positive_generator, positive_generator})
+  def tuple_three, do: StreamData.tuple({positive_generator, positive_generator, positive_generator})
 
-    piece_generator =
-      tuple_three
-      |> StreamData.bind(fn {idx, begin, len} ->
-        StreamData.binary(length: len)
-        |> StreamData.map(fn bin ->
-          WireProtocol.piece(idx, begin, bin)
-        end)
+  def piece_generator do
+    tuple_three
+    |> StreamData.bind(fn {idx, begin, len} ->
+      StreamData.binary(length: len)
+      |> StreamData.map(fn bin ->
+        WireProtocol.piece(idx, begin, bin)
       end)
+    end)
+  end
+
+  def event_generator do
 
     StreamData.one_of([
       StreamData.constant(WireProtocol.choke()),
@@ -88,7 +103,7 @@ defmodule Torrentex.Torrent.WireProtocolTest do
       tuple_three |> StreamData.map(&{:request, &1}),
       tuple_three |> StreamData.map(&{:cancel, &1}),
       StreamData.integer(0..65_535) |> StreamData.map(&WireProtocol.port(&1)),
-      piece_generator,
+      piece_generator(),
       bitfield_gen(),
       StreamData.tuple({peer_id_generator, peer_id_generator})
       |> StreamData.map(fn {peer_id, hash} -> WireProtocol.handshake(peer_id, hash) end)

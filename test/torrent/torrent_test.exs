@@ -1,7 +1,7 @@
 defmodule Torrentex.Torrent.ChunkTest do
   alias Torrentex.Torrent.Torrent
 
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   use ExUnitProperties
 
   property "binary_in_chunks" do

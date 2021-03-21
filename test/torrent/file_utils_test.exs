@@ -2,7 +2,7 @@ defmodule Torrentex.Torrent.FileUtilsSpec do
   import Torrentex.Torrent.FileUtils
   alias Torrentex.Torrent.Torrent
 
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   test "write correctly chunks of file" do
     file_name = "test_file.bin"

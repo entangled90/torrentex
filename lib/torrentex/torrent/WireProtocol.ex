@@ -19,10 +19,10 @@ defmodule Torrentex.Torrent.WireProtocol do
            | :handshake
            | :keep_alive,
            nil
-           | binary
-           | integer
-           | {integer, integer, binary | integer}
-           | {binary, binary}
+           | binary()
+           | integer()
+           | {integer(), integer(), iolist() | binary() | integer()}
+           | {binary(), binary()}
            | {MapSet.t(integer()), integer()}}
 
   defguard is_20_bytes(binary) when is_binary(binary) and byte_size(binary) == 20
@@ -52,7 +52,7 @@ defmodule Torrentex.Torrent.WireProtocol do
   def request(idx, begin, length), do: {:request, {idx, begin, length}}
 
   @spec piece(integer, pos_integer, binary) :: message()
-  def piece(index, begin, <<bin :: binary>>) when is_integer(index) and is_integer(begin),
+  def piece(index, begin, <<bin::binary>>) when is_integer(index) and is_integer(begin),
     do: {:piece, {index, begin, bin}}
 
   @spec bitfield(MapSet.t(integer()), integer()) :: message()
@@ -73,7 +73,7 @@ defmodule Torrentex.Torrent.WireProtocol do
   defp parse_multi(binary, acc) do
     {rest, msg} = parse(binary)
 
-    if msg != nil do
+    if msg do
       acc = [msg | acc]
       if byte_size(rest) > 0, do: parse_multi(rest, acc), else: {acc, <<>>}
     else
@@ -81,14 +81,48 @@ defmodule Torrentex.Torrent.WireProtocol do
     end
   end
 
-  @spec parse(<<_::32, _::_*8>>) :: {binary, message() | nil}
+  @spec parse(binary() | iolist()) :: {binary | iolist(), message() | nil}
   def parse(
         <<19, @protocol, _::binary-size(8), hash::binary-size(20), id::binary-size(20),
           rest::binary>>
       ),
       do: {rest, {:handshake, {id, hash}}}
 
-  def parse(<<len::32, msg::binary-size(len), rest::binary>>)  do
+  def parse([<<len::32, 7::8, index::32, begin::32, rem::binary>> | tail]) do
+    case rem do
+      <<block::binary-size(len), other::binary>> ->
+        {combine_to_list(other, tail), piece(index, begin, block)}
+
+      rem ->
+        {_, pieces, next_pieces} =
+          for bytes <- tail, reduce: {byte_size(rem), [], []} do
+            {size, pieces, next_msg_pieces} ->
+              if size >= len do
+                {size, pieces, [bytes | next_msg_pieces]}
+              else
+                final_piece_len = len - size
+
+                case bytes do
+                  # this is the last piece for completing the block
+
+                  <<final_piece::binary-size(final_piece_len), remaining::binary>> ->
+                    {len, [final_piece | pieces], combine_to_list(remaining, next_msg_pieces)}
+
+                  _ ->
+                    {byte_size(bytes) + size, [bytes | pieces], next_msg_pieces}
+                end
+              end
+          end
+
+        {:lists.reverse(next_pieces), :lists.reverse(pieces)}
+    end
+  end
+
+  # unoptimized case for all other msg types
+  def parse(iolist) when is_list(iolist), do: parse(IO.iodata_to_binary(iolist))
+  def parse([]), do: {<<>>, nil}
+
+  def parse(<<len::32, msg::binary-size(len), rest::binary>>) do
     event =
       if len == 0 do
         keep_alive()
@@ -206,4 +240,7 @@ defmodule Torrentex.Torrent.WireProtocol do
       (div(bit_size, 8) + 1) * 8
     end
   end
+
+  defp combine_to_list(bin, list), do: if byte_size(bin) > 0, do: [bin | list], else: list
+
 end

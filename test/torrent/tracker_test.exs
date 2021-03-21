@@ -1,5 +1,5 @@
 defmodule Torrentex.Torrent.TrackerTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   alias Torrentex.Torrent.Tracker
   alias Torrentex.Torrent.Parser
   alias Torrentex.Torrent.Torrent.State.DownloadStatus
