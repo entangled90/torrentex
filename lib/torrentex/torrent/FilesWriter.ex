@@ -51,7 +51,7 @@ defmodule Torrentex.Torrent.FilesWriter do
   @impl true
   def init(args) do
     metainfo = Keyword.fetch!(args, :metainfo)
-    download_folder = Keyword.get(args, :download_folder, File.cwd!())
+    download_folder = Keyword.fetch!(args, :download_folder)
     %{"piece length": piece_length, pieces: pieces} = metainfo |> Map.from_struct()
 
     {:ok,

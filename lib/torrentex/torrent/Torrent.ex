@@ -108,6 +108,7 @@ defmodule Torrentex.Torrent.Torrent do
   @impl true
   def init(args) do
     source = Keyword.fetch!(args, :source)
+    download_folder = Keyword.get(args, :download_folder, File.cwd!)
     {torrent, info_hash} = Parser.decode_torrent(source)
 
     Logger.info("Starting torrent for state #{inspect(torrent)}")
@@ -116,7 +117,7 @@ defmodule Torrentex.Torrent.Torrent do
     # each hash is 20 byte
     num_pieces = div(byte_size(torrent.info.pieces), 20)
     {:ok, peer_supervisor} = PeerConnectionSupervisor.start_link([])
-    {:ok, files_writer} = FilesWriter.start_link(metainfo: torrent.info)
+    {:ok, files_writer} = FilesWriter.start_link(metainfo: torrent.info, download_folder: download_folder)
 
     %{piece_length: piece_length, short_pieces: short_pieces} =
       FilesWriter.piece_length_info(files_writer)

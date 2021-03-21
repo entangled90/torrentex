@@ -52,7 +52,7 @@ defmodule Torrentex.Torrent.WireProtocol do
   def request(idx, begin, length), do: {:request, {idx, begin, length}}
 
   @spec piece(integer, pos_integer, binary) :: message()
-  def piece(index, begin, bin) when is_binary(bin) and is_integer(index) and is_integer(begin),
+  def piece(index, begin, <<bin :: binary>>) when is_integer(index) and is_integer(begin),
     do: {:piece, {index, begin, bin}}
 
   @spec bitfield(MapSet.t(integer()), integer()) :: message()
@@ -66,7 +66,7 @@ defmodule Torrentex.Torrent.WireProtocol do
   def cancel(index, begin, length), do: {:cancel, {index, begin, length}}
 
   @spec parse_multi(binary) :: {[message()], binary()}
-  def parse_multi(binary) do
+  def parse_multi(<<binary::binary>>) do
     parse_multi(binary, [])
   end
 
@@ -88,7 +88,7 @@ defmodule Torrentex.Torrent.WireProtocol do
       ),
       do: {rest, {:handshake, {id, hash}}}
 
-  def parse(<<len::32, msg::binary-size(len), rest::binary>> = binary) when is_binary(binary) do
+  def parse(<<len::32, msg::binary-size(len), rest::binary>>)  do
     event =
       if len == 0 do
         keep_alive()
@@ -137,7 +137,7 @@ defmodule Torrentex.Torrent.WireProtocol do
     {rest, event}
   end
 
-  def parse(bin) when is_binary(bin), do: {bin, nil}
+  def parse(<<bin::binary>>), do: {bin, nil}
 
   @spec encode(message()) :: <<_::40, _::_*8>>
   def encode({:choke, nil}), do: <<1::32, 0::8>>
@@ -165,7 +165,7 @@ defmodule Torrentex.Torrent.WireProtocol do
   def encode({:request, {index, begin, length}}),
     do: <<13::32, 6::8, index::32, begin::32, length::32>>
 
-  def encode({:piece, {index, begin, block}}) when is_binary(block),
+  def encode({:piece, {index, begin, <<block::binary>>}}),
     do: <<9 + byte_size(block)::32, 7::8, index::32, begin::32, block::binary>>
 
   def encode({:cancel, {index, begin, length}}),
@@ -176,10 +176,9 @@ defmodule Torrentex.Torrent.WireProtocol do
   def encode({:keep_alive, nil}), do: @keep_alive
 
   @spec bitfield_to_set(binary()) :: {MapSet.t(integer()), integer()}
-  defp bitfield_to_set(bits) when is_binary(bits), do: bitfield_to_set(bits, 0, MapSet.new(), 0)
+  defp bitfield_to_set(<<bits::binary>>), do: bitfield_to_set(bits, 0, MapSet.new(), 0)
 
-  defp bitfield_to_set(<<h::1, t::bitstring>> = bitstring, idx, previous, len)
-       when is_bitstring(bitstring) do
+  defp bitfield_to_set(<<h::1, t::bitstring>>, idx, previous, len) do
     if h == 0 do
       bitfield_to_set(t, idx + 1, previous, len + 1)
     else

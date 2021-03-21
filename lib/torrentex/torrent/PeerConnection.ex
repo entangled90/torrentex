@@ -4,6 +4,7 @@ defmodule Torrentex.Torrent.PeerConnection do
   alias Torrentex.Torrent.Pieces
   alias Torrentex.Torrent.Piece
   alias Torrentex.Torrent.FilesWriter
+
   use GenServer
   require Logger
 
@@ -109,29 +110,26 @@ defmodule Torrentex.Torrent.PeerConnection do
   end
 
   @impl true
-  def handle_info({:tcp, socket, binary}, state)
-      when is_binary(binary) do
-    if socket == nil do
-      raise "Socket is nil!"
-    else
-      if socket != state.socket do
-        raise "Invalid socket sent the message!"
-      end
-    end
+  def handle_info({:tcp, _socket, <<binary::binary>>}, state) do
+        bin_data = if byte_size(state.partial_packets) > 0 do
+          IO.iodata_to_binary([state.partial_packets | binary])
+        else
+          binary
+        end
+        {msgs, remaining} = WireProtocol.parse_multi(bin_data)
 
-    {msgs, remaining} = WireProtocol.parse_multi(state.partial_packets <> binary)
-    state = %{state | partial_packets: remaining}
+        state = %{state | partial_packets: remaining}
 
-    state =
-      msgs
-      |> Enum.reduce(state, fn msg, state ->
-        Logger.debug("received message #{inspect(msg)}")
-        handle_msg(msg, state)
-      end)
+        state =
+          msgs
+          |> Enum.reduce(state, fn msg, state ->
+            Logger.debug("received message #{inspect(msg)}")
+            handle_msg(msg, state)
+          end)
 
-    {_, state} = command_loop(state)
+        {_, state} = command_loop(state)
 
-    {:noreply, state}
+        {:noreply, state}
   end
 
   @impl true
@@ -218,7 +216,7 @@ defmodule Torrentex.Torrent.PeerConnection do
     Logger.debug("Received piece #{idx}, #{begin}")
 
     if Map.has_key?(state.downloading, idx) do
-      {:ok, piece} = state.downloading[idx] |> IO.inspect(label: "before") |> Piece.add_sub_piece(begin, block) |> IO.inspect(label: "after")
+      {:ok, piece} = state.downloading[idx] |> Piece.add_sub_piece(begin, block)
 
       if piece.complete do
         Logger.debug("Piece #{idx} is completed.")
@@ -272,7 +270,7 @@ defmodule Torrentex.Torrent.PeerConnection do
 
         downloading =
           for {id, len} <- ids, into: state.downloading do
-            Logger.debug "piece with id #{id} has len #{len}"
+            Logger.debug("piece with id #{id} has len #{len}")
             piece_partition = FilesWriter.partition_piece(len)
 
             sub_pieces =
@@ -296,7 +294,7 @@ defmodule Torrentex.Torrent.PeerConnection do
 
         {:continue, %{state | downloading: downloading, interested: true}}
 
-        _ ->
+      _ ->
         {:continue, state}
     end
   end
