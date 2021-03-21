@@ -69,8 +69,8 @@ defmodule Torrentex.Torrent.WireProtocolTest do
       len = byte_size(encoded)
       first = :binary.bin_to_list(encoded, {0, div(len, 2)})
       second = :binary.bin_to_list(encoded, {div(len, 2), len - div(len, 2)})
-      {_, ^piece} = WireProtocol.parse([first| second])
-
+      {_, piece_decoded} = WireProtocol.parse([first| second])
+      assert piece_decoded == piece
     end
   end
 
