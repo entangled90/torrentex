@@ -119,7 +119,7 @@ defmodule Torrentex.Torrent.PeerConnection do
       end
     end
 
-    {msgs, remaining} = WireProtocol.parse_multi(state.partial_packets <> binary)
+    {msgs, remaining} = WireProtocol.parse_multi([state.partial_packets, binary])
     state = %{state | partial_packets: remaining}
 
     state =
@@ -218,7 +218,7 @@ defmodule Torrentex.Torrent.PeerConnection do
     Logger.debug("Received piece #{idx}, #{begin}")
 
     if Map.has_key?(state.downloading, idx) do
-      {:ok, piece} = state.downloading[idx] |> IO.inspect(label: "before") |> Piece.add_sub_piece(begin, block) |> IO.inspect(label: "after")
+      {:ok, piece} = state.downloading[idx] |> Piece.add_sub_piece(begin, block)
 
       if piece.complete do
         Logger.debug("Piece #{idx} is completed.")

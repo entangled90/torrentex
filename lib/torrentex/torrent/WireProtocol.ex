@@ -75,20 +75,32 @@ defmodule Torrentex.Torrent.WireProtocol do
 
     if msg != nil do
       acc = [msg | acc]
-      if byte_size(rest) > 0, do: parse_multi(rest, acc), else: {acc, <<>>}
+      if IO.iodata_length(rest) > 0, do: parse_multi(rest, acc), else: {acc, <<>>}
     else
       {acc, rest}
     end
   end
 
-  @spec parse(<<_::32, _::_*8>>) :: {binary, message() | nil}
+  @spec parse(iodata()) :: {iodata(), message() | nil}
   def parse(
         <<19, @protocol, _::binary-size(8), hash::binary-size(20), id::binary-size(20),
           rest::binary>>
       ),
       do: {rest, {:handshake, {id, hash}}}
 
-  def parse(<<len::32, msg::binary-size(len), rest::binary>> = binary) when is_binary(binary) do
+  def parse([<<len::32, rest::binary>>| tail] = iolist) do
+    if (byte_size(rest) + IO.iodata_length(tail) >= len) do
+      parse(IO.iodata_to_binary(iolist))
+    else
+      {iolist, nil}
+    end
+  end
+
+  def parse([_h|_t]= iolist), do: parse(IO.iodata_to_binary(iolist))
+  def parse([]), do: {[], nil}
+
+
+  def parse(<<len::32, msg::binary-size(len), rest::binary>>) do
     event =
       if len == 0 do
         keep_alive()
@@ -137,7 +149,7 @@ defmodule Torrentex.Torrent.WireProtocol do
     {rest, event}
   end
 
-  def parse(bin) when is_binary(bin), do: {bin, nil}
+  def parse(<<bin::binary>>), do: {bin, nil}
 
   @spec encode(message()) :: <<_::40, _::_*8>>
   def encode({:choke, nil}), do: <<1::32, 0::8>>

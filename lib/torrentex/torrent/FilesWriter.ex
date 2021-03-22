@@ -204,7 +204,7 @@ defmodule Torrentex.Torrent.FilesWriter do
   def short_pieces(files, piece_length) do
     {_, map} =
       Enum.reduce(files, {0, %{}}, fn {_, %{length: len}}, {idx, map} ->
-        last_piece = div(len, piece_length) |> IO.inspect(label: "last_piece")
+        last_piece = div(len, piece_length)
 
         if rem(len, piece_length) != 0 do
           # pieces start from 0
