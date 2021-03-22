@@ -45,7 +45,7 @@ defmodule Torrentex.Torrent.FilesWriter do
   end
 
   def start_link(args) do
-    GenServer.start_link(__MODULE__, args, [spawn_opt: [min_heap_size: 1024*1024]])
+    GenServer.start_link(__MODULE__, args)
   end
 
   @impl true

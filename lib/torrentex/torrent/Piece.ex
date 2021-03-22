@@ -20,10 +20,12 @@ defmodule Torrentex.Torrent.Piece do
     }
   end
 
-  @spec add_sub_piece(t(), integer(), binary()) :: {:ok, t()} | {:error, {:wrong_size}}
-  def add_sub_piece(%__MODULE__{} = piece, begin, sub_piece) when is_binary(sub_piece) do
-    if begin + byte_size(sub_piece) == piece.piece_length or
-         byte_size(sub_piece) == piece.full_sub_piece_len do
+  @spec add_sub_piece(t(), integer(), iodata()) :: {:ok, t()} | {:error, {:wrong_size}}
+  def add_sub_piece(%__MODULE__{} = piece, begin, sub_piece) do
+    bin_len = :erlang.iolist_size(sub_piece)
+
+    if begin + bin_len == piece.piece_length or
+      bin_len == piece.full_sub_piece_len do
       sub_pieces = Map.put(piece.sub_pieces, begin, sub_piece)
 
       {:ok,

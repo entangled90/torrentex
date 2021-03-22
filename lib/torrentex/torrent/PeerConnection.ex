@@ -111,12 +111,7 @@ defmodule Torrentex.Torrent.PeerConnection do
 
   @impl true
   def handle_info({:tcp, _socket, <<binary::binary>>}, state) do
-        bin_data = if byte_size(state.partial_packets) > 0 do
-          IO.iodata_to_binary([state.partial_packets | binary])
-        else
-          binary
-        end
-        {msgs, remaining} = WireProtocol.parse_multi(bin_data)
+        {msgs, remaining} = WireProtocol.parse_multi([state.partial_packets, binary])
 
         state = %{state | partial_packets: remaining}
 
