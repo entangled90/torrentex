@@ -208,10 +208,10 @@ defmodule Torrentex.Torrent.PeerConnection do
   end
 
   defp handle_msg({:piece, {idx, begin, block}}, %State{} = state) do
-    Logger.debug("Received piece #{idx}, #{begin}")
+    Logger.debug("Received piece #{idx}, #{begin}, size #{IO.iodata_length(block)}")
 
     if Map.has_key?(state.downloading, idx) do
-      {:ok, piece} = state.downloading[idx] |> Piece.add_sub_piece(begin, block)
+      {:ok, piece} = state.downloading[idx] |> Piece.add_sub_piece(begin, block )
 
       if piece.complete do
         Logger.debug("Piece #{idx} is completed.")

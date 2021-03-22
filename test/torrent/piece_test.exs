@@ -28,7 +28,7 @@ defmodule Torrentex.Torrent.PieceTest do
       %Piece{complete: true} =
         for begin <- sub_pieces, reduce: piece do
           piece ->
-            {:ok, piece} = Piece.add_sub_piece(piece, begin, <<1::@binary_size_bits>>)
+            {:ok, piece} = Piece.add_sub_piece(piece, begin, [<<1::@binary_size_bits>>])
             piece
         end
     end

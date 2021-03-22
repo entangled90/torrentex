@@ -70,9 +70,9 @@ defmodule Torrentex.Torrent.WireProtocolTest do
       len = byte_size(encoded)
       first = :binary.bin_to_list(encoded, {0, div(len, 2)}) |> IO.iodata_to_binary()
       second = :binary.bin_to_list(encoded, {div(len, 2), len - div(len, 2)}) |> IO.iodata_to_binary()
-      # IO.puts "first: len=#{len}, fst=#{byte_size(first)}, snd=#{byte_size(second)}"
-      {empty_iodata, {:piece, {^idx, ^begin, block_decoded}}} = WireProtocol.parse([first, second])
-      assert IO.iodata_length(empty_iodata) == 0
+      {[first], nil} = WireProtocol.parse([first])
+      {[], {:piece, {^idx, ^begin, block_decoded}}} = WireProtocol.parse([first, second])
+      # assert IO.iodata_length(empty_iodata) == 0
       assert IO.iodata_to_binary(block_decoded) == block
     end
   end
