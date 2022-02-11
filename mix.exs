@@ -5,7 +5,7 @@ defmodule Torrentex.MixProject do
     [
       app: :torrentex,
       version: "0.1.0",
-      elixir: "~> 1.11",
+      elixir: "~> 1.13",
       start_permanent: Mix.env() == :prod,
       test_coverage: [tool: ExCoveralls],
       preferred_cli_env: [coveralls: :test],

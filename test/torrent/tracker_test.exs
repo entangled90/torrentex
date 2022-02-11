@@ -5,7 +5,7 @@ defmodule Torrentex.Torrent.TrackerTest do
   alias Torrentex.Torrent.Torrent.State.DownloadStatus
 
   test "tracker for ubuntu replies" do
-    {torrent, hash} = Parser.decode_torrent("data/ubuntu-20.04.2.0-desktop-amd64.iso.torrent")
+    {torrent, hash} = Parser.decode_torrent("data/ubuntu-21.10-desktop-amd64.iso.torrent")
     status = Torrentex.Torrent.Torrent.DownloadStatus.for_torrent(torrent.info)
 
     {:ok, decoded} =
